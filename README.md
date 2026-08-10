@@ -346,6 +346,36 @@ Microsoft Foundry Hosted Agentの公式scaffoldである`azd ai agent init --inf
 - 公開PRではBicepのbuildと静的検査だけを実行し、Azure認証が必要なvalidate / what-ifは保護されたdeploy workflow内で実行する
 - Hosted Agentはcontainerではなくsource-code ZIP deploymentを第一候補とし、ACRはcontainerが必要になった場合だけ追加する
 
+### Azure Verified Modules
+
+対応するAzure Verified Modules（AVM）があるresourceは、AVMを第一候補とする。Microsoft管理の検証済みmoduleを使い、resourceごとのsecurity、diagnostic settings、private endpoint、RBACなどを自作moduleで再実装しない。
+
+採用順序は次のとおり。
+
+1. Public Bicep RegistryのAVM resource / pattern module
+2. AVMで表現できない複数resourceの関係だけをまとめる、薄いproject固有composition module
+3. AVMが未提供、または必要なAPI version / propertyを未サポートの場合に限り、最小限のlocal moduleまたはraw resource
+
+raw resourceを使う場合は、対象resourceの近くにAVMを使えない理由と再評価条件をcommentで残す。AVMを呼ぶだけの一対一wrapperは作らず、`main.bicep`または意味のあるcomposition moduleから直接参照する。
+
+初期候補は次のとおり。
+
+| 対象 | AVM module候補 |
+|---|---|
+| Foundry account / project / model deployment | `avm/res/cognitive-services/account` |
+| Cosmos DB account / database / container / data-plane RBAC | `avm/res/document-db/database-account` |
+| Storage Account / Queue | `avm/res/storage/storage-account` |
+| Function App / Flex Consumption plan | `avm/res/web/site`、`avm/res/web/serverfarm` |
+| Key Vault | `avm/res/key-vault/vault` |
+| Application Insights / Log Analytics / diagnostic settings | `avm/res/insights/component`、`avm/res/operational-insights/workspace`、`avm/res/insights/diagnostic-setting` |
+| Managed Identity / federated credential | `avm/res/managed-identity/user-assigned-identity` |
+| Azure RBAC | `avm/res/authorization/role-assignment` |
+| Action Group / Budget | `avm/res/insights/action-group`、`avm/res/consumption/budget` |
+
+module referenceは`br/public:avm/...:<version>`の完全なversionへ固定する。更新は自動追従させず、release noteとbreaking changeを確認し、Bicep build、validation、what-ifを通してから行う。
+
+AVMにはdeployment usage telemetryを無効化できる`enableTelemetry` parameterがある。このpublic repositoryでは稼働環境との結び付きを減らす方針に合わせ、全AVM呼び出しで`enableTelemetry: false`を明示する。これはAVM自身のusage telemetryだけを対象とし、Application Insightsへ送るアプリケーションtelemetryは無効化しない。
+
 ### 公開リポジトリの情報境界
 
 このリポジトリはpublicとする。credentialだけでなく、実際のAzure環境とこのコードを直接結び付ける識別子も非公開情報として扱う。
@@ -393,16 +423,10 @@ infra/
   main.bicep
   main.bicepparam
   app/
-    functions.bicep
-    foundry.bicep
-  core/
-    db/
-    host/
-    identity/
-    monitor/
-    storage/
+    functions.bicep  # AVMを組み合わせる薄いcomposition
+    foundry.bicep    # AVMと未対応resourceの境界
   bootstrap/
-    main.bicep
+    main.bicep       # Managed Identity / RBACのAVMを利用
 .github/workflows/
   ci.yml
   deploy.yml
@@ -426,8 +450,6 @@ workflowは`concurrency`で同一環境への並行deployを禁止し、Actions�
 ### Bootstrap
 
 CIが自分自身の認証基盤を作ることはできないため、最初の1回だけ開発者のAzure identityで`infra/bootstrap/main.bicep`を実行する。ここでGitHub Actions用User Assigned Managed Identity、federated credential、必要なAzure RBACを作成する。`AZURE_CLIENT_ID`、`AZURE_TENANT_ID`、`AZURE_SUBSCRIPTION_ID`はGitHub Environment secretsへ手動登録し、repository variablesには置かない。
-
-現時点のローカルリポジトリにはGit remoteが設定されていない。OIDCのsubjectとworkflowを確定する前に、GitHub上のowner / repository名とdefault branchを決める必要がある。
 
 ### Bicepで管理しない範囲
 
@@ -481,6 +503,7 @@ CIが自分自身の認証基盤を作ることはできないため、最初の
 | 公開Actionsログからの環境特定 | IDとresource名をmaskし、deploy outputを一時ファイルへ退避。詳細ログをartifact化しない |
 | Hosted Agent deploy失敗 | infra provisionとagent version作成を分離し、直前のactive versionを維持 |
 | model capacity不足 | CIの事前確認とparameter化で別version / regionへ切り替え |
+| AVM updateによる意図しない変更 | versionを固定し、release note確認とbuild / validation / what-ifを経て明示的に更新 |
 
 ## 14. 参照
 
@@ -501,6 +524,10 @@ CIが自分自身の認証基盤を作ることはできないため、最初の
 - [Automate resource deployment for Azure Functions](https://learn.microsoft.com/azure/azure-functions/functions-infrastructure-as-code)
 - [Deploy to Azure infrastructure with GitHub Actions](https://learn.microsoft.com/devops/deliver/iac-github-actions)
 - [Use Bicep to manage secrets](https://learn.microsoft.com/azure/azure-resource-manager/bicep/scenarios-secrets)
+- [Bicep modules and the Public Bicep Registry](https://learn.microsoft.com/azure/azure-resource-manager/bicep/modules)
+- [Azure Verified Modules](https://azure.github.io/Azure-Verified-Modules/)
+- [AVM Bicep Resource Module Index](https://azure.github.io/Azure-Verified-Modules/indexes/bicep/bicep-resource-modules/)
+- [AVM telemetry enablement flexibility](https://azure.github.io/Azure-Verified-Modules/spec/SFR4/)
 
 ## 15. 未確定事項
 
@@ -516,7 +543,7 @@ CIが自分自身の認証基盤を作ることはできないため、最初の
 - Application Insightsのcontent保持期間
 - evaluation datasetの初期ケースと合格threshold
 - continuous evaluationの頻度と最大trace件数
-- GitHub repositoryのowner / name / default branchとremote設定
 - Hosted Agentのsource-code deploymentで利用するruntime、entry point、dependency resolution mode
 - model deploymentのversion、SKU、対象regionのcapacity
 - 公開ActionsでAzure CLI / `azd`の出力を安全に抑制する共通script
+- 各resourceで採用するAVM versionと、AVM未対応propertyの一覧

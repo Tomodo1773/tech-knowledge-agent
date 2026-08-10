@@ -18,6 +18,10 @@ Azure AI関連スタックを学ぶための、技術ナレッジ検索エージ
 
 - Azure Resource Managerで表現できる基盤はBicepをsource of truthとする。
 - `azd provision`はBicep適用、`azd deploy`はFunctionsとHosted Agentのartifact配布に使う。
+- 対応するAzure Verified Modules（AVM）があるresourceはAVMを第一候補とし、module versionを明示的に固定する。
+- AVMを呼ぶだけの一対一wrapperは作らない。project固有moduleは複数resourceの関係を表す薄いcompositionに限定する。
+- AVMが必要なAPI versionやpropertyを未サポートの場合だけraw Bicepを使い、理由と再評価条件をcode commentへ残す。
+- public repositoryの情報境界に合わせ、AVMの`enableTelemetry`は`false`を明示する。
 - 公開PRではAzureへログインしない。Bicep buildと静的検査だけを行う。
 - 実環境のvalidate、what-if、deployは保護されたGitHub Environmentで行い、出力を公開しない。
 - Azureサービス間認証はManaged Identityと最小権限RBACを優先し、account keyをapp settingsへ渡さない。
