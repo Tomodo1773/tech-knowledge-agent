@@ -1,0 +1,31 @@
+# Local secrets and configuration
+.env
+.env.*
+!.env.example
+!.env.sample
+*.local.bicepparam
+*.local.parameters.json
+*.pem
+*.pfx
+*.key
+
+# Azure Developer CLI local state
+.azure/
+
+# Deployment output and diagnostics
+deployment-output*
+what-if-output*
+azure-debug*
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

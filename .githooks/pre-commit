@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+set -eu
+
+pwsh -NoProfile -File scripts/check-repository-policy.ps1 -Staged
