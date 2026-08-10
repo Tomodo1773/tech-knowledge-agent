@@ -333,6 +333,17 @@ Trace評価ではApplication Insights内の`invoke_agent` spanを利用する。
 
 ## 11. IaC・CI/CD方針
 
+### リポジトリ運用ポリシー
+
+本リポジトリは、関連リポジトリ共通ポリシーの対象とする。公開リポジトリの境界を守りながら、次を適用する。
+
+- `AGENTS.md`と`CLAUDE.md`は別ファイルとして管理し、内容を一致させる。pre-commit hookとCIで同期を検証する。
+- 依存関係はmanifestとlockfileで管理し、Socket Firewall対応の取得・更新は`sfw`経由にする。
+- Dependabotは通常更新とsecurity updateを分け、使用中のpackage ecosystemとGitHub Actionsを対象にする。
+- GitHub Actionsは完全長commit SHAへ固定し、`GITHUB_TOKEN`の権限を最小限にする。
+
+詳細な開発者向けルールと例外の記録先は`docs/repository-policy.md`、自動検証は`./scripts/check-repository-policy.ps1`とする。
+
 ### 基本方針
 
 Azureのcontrol planeで管理できるリソースと設定はBicepをsource of truthとする。`azd`は別のIaCとして使うのではなく、`azd provision`でBicepを適用し、`azd deploy`でアプリケーション成果物を配布するオーケストレーターとして使う。
