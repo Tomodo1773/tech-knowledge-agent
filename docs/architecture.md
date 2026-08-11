@@ -6,18 +6,18 @@
 
 ### GitHub同期
 
-1. GitHub Webhook Functionは`X-Hub-Signature-256`を検証し、`push`かつGitHub APIで解決したdefault branchへの更新だけを受け付ける。
-2. `X-GitHub-Delivery`を冪等キーにjob stateとoutboxをTableへ永続化し、Queueにはjob参照だけを投入して速やかに2xxを返す。
-3. Indexer Functionは`after` SHA時点のGitHub Contents APIを読み、Markdownをchunk化、embedding、Cosmos upsertする。
-4. force pushは対象refを全件reconcileする。同期leaseと最新target SHAを確認し、遅延jobが新しい状態を上書きしないようにする。
+1. Sync Scheduler FunctionはTimer Triggerで起動し、公開GitHub repositoryのdefault branchのcommit SHAを認証なしのGitHub APIで確認する。
+2. SHAが最終同期済みrevisionと異なる場合だけ、target SHAを持つ同期jobをTableへ保存し、job参照をStorage Queueへ直接投入する。Queue投入に失敗した実行は失敗として記録し、次回Timerで再試行する。
+3. Indexer Functionはtarget SHA時点のGitHub Contents APIを読み、対象記事を全件reconcileしてMarkdownのchunk化、embedding、Cosmos upsertと削除反映を行う。
+4. 同期中はleaseで並行実行を防ぐ。処理中にdefault branchが更新された場合は、次回Timerが新しいSHAを検出して再同期する。
 
-Webhook payloadは本文を含まないため、本文取得をWebhook Functionで行わない。永続化後のQueue投入に失敗してもoutbox relayが再投入する。
+定期確認ではcommit SHAが変わらなければ本文を取得しない。手動同期はMVPの必須機能にせず、Timerの再実行で復旧する。
 
 ### LINE質問
 
-1. LINE Webhook Functionは署名を検証し、`webhookEventId`でjob stateとoutboxを作って2秒以内に2xxを返す。
+1. LINE Webhook Functionは署名を検証し、`webhookEventId`を冪等キーにjob stateを作り、job参照をStorage Queueへ直接投入して2秒以内に2xxを返す。Queue投入に失敗した場合は2xxを返さず、Webhook再送で再試行する。再送で既存の未完了jobを受けた場合は同じjob参照を再投入し、完了済みなら何も投入せず2xxを返す。
 2. Agent Worker Functionがjobを実行し、Hosted Agentの`knowledge_search` toolからCosmosを検索する。
-3. 回答または最終失敗を永続化し、Push Message outboxを送る。
+3. Agent Worker Functionが同一の`X-Line-Retry-Key`でPush Messageを直接送信し、回答または最終失敗をjob stateへ保存する。
 
 対象は1:1チャットだけとする。group / roomは署名検証後に2xxを返し、`unsupported_source_type`の監査記録だけを残す。`replyToken`は非同期最終返信に保存・使用しない。Loading APIは1:1でbest effortとし、失敗しても処理を継続する。
 
@@ -29,26 +29,27 @@ Webhook payloadは本文を含まないため、本文取得をWebhook Function�
 
 画像参照は本文に残すが、MVPではOCR・画像本文indexを行わず、`images/**`だけの更新では再indexしない。
 
-GitHub Appは対象repositoryにだけinstallし、`Contents: read-only`を与える。private keyとWebhook secretはKey Vaultで管理し、実repository名、App ID、installation ID、Webhook URLを文書やrepositoryへ記録しない。
+同期対象は公開repositoryとし、GitHub credentialを持たない。owner、repository、default branchはdeploy時の非機密設定として与え、実値をこの文書へ記録しない。
 
-## 永続化とメッセージ契約
+## job stateとメッセージ契約
 
-Storage Queueと同じStorage AccountのTable Storageに`workItems` tableを置く。`PartitionKey = jobId`、`RowKey = state`または`outbox:{name}`とし、受信時にstateとoutboxを同じpartitionのtransactional batchで作る。Queueはat-least-onceであるため、本文・credential・reply tokenを置かず、job参照とtelemetry metadataだけを持つ。
+Storage Queueと同じStorage AccountのTable Storageに`workItems` tableを置き、同期状況、LINE jobの冪等性と処理結果だけを保持する。outboxとrelayは作らない。Queueはat-least-onceであるため、本文・credential・reply tokenを置かず、job参照とtelemetry metadataだけを持つ。
 
-| flow | jobId / 冪等キー | state | outbox |
-|---|---|---|---|
-| GitHub同期 | `github:{deliveryId}` | delivery、ref、before/after、forced、status、attempt、revision、content hash、trace context | `index`。relayが未配送を再enqueue |
-| LINE質問 | `line:{webhookEventId}` | event、message ID/text、source、destination、status、result、trace context | `push`。payload hash、retry key、attempt、acceptedAt |
+| flow | key | state |
+|---|---|---|
+| GitHub同期元 | `github:default` | last observed / successful SHA、active job ID、status |
+| GitHub同期job | `github:{targetSha}` | target SHA、status、attempt、content hash、trace context |
+| LINE質問 | `line:{webhookEventId}` | event、message ID/text、source、destination、status、result、retry key、attempt、trace context |
 
-LINE Pushは同一payloadと`X-Line-Retry-Key`を用いる。timeoutまたはHTTP 500だけを指数backoffで24時間以内に再試行し、2xx/409を完了、その他4xxを非再試行とする。最終失敗時は重複送信せず、次回の利用者メッセージで再試行を促す。
+Queue Triggerの標準再試行とpoison queueを使い、独自のrelayや24時間再試行は作らない。LINE Pushは再実行時も同一payloadと`X-Line-Retry-Key`を用い、2xx/409を完了、その他4xxを非再試行とする。最終失敗時は重複送信せず、次回の利用者メッセージで再試行を促す。
 
 ## Cosmos DB検索ストア
 
 NoSQLの`chunks` containerを一つ作り、partition keyは`/corpusId`、MVP値は`default`に固定する。一corpusを単一logical partitionに置き、cross-partition vector retrievalを避ける。複数corpusまたは20 GB超の見込みが生じた時点で新containerへの移行を判断する。
 
-各chunkは`id = ${articleId}:${chunkIndex}`、`corpusId`、記事・見出し・source metadata、`sourceRevision`、`contentHash`、`chunkingVersion`、`indexedAt`、`text`、`embedding`を持つ。記事更新は既存articleのchunkを削除して新chunkをupsertし、削除時は該当articleのchunkを削除する。小さい記事は同一logical partitionのtransactional batchで置換し、100操作、2 MB、5秒を超える場合は同一jobでcheckpointを進める。
+各chunkは`id = ${articleId}:${chunkIndex}`、`corpusId`、記事・見出し・source metadata、`sourceRevision`、`contentHash`、`chunkingVersion`、`indexedAt`、`text`、`embedding`を持つ。記事更新は既存articleのchunkを削除して新chunkをupsertし、削除時は該当articleのchunkを削除する。小さい記事は同一logical partitionのtransactional batchで置換し、batch制限を超える記事は複数batchで記事全体を置換する。途中で失敗した場合はcheckpointを持たず、記事単位で再実行する。
 
-embedding deploymentのmodel、version、SKU、TPMは[プラットフォームと運用](platform-and-operations.md#採用設定)を正とする。vector fieldは`/embedding`、3072次元、`float32`、cosine、`quantizedFlat`とし、`/embedding/*`を通常indexから除外する。vector policy/indexはimmutableであり、MVPで1,000 vector未満のfull scanを許容する。
+embedding deploymentのmodel、version、SKU、TPMは[プラットフォームと運用](platform-and-operations.md#採用設定)を正とする。vector fieldは`/embedding`、1536次元、`float32`、cosine、`quantizedFlat`とし、`/embedding/*`を通常indexから除外する。vector policy/indexはimmutableであり、MVPで1,000 vector未満のfull scanを許容する。
 
 ## Hosted Agentとidentity/RBAC
 

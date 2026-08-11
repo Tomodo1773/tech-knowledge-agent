@@ -8,6 +8,10 @@
 
 実装開始可能と判断した。実装時に調整する項目と最小vertical sliceを分離し、個人MVPとして過剰な品質gateは採用しない。実resource作成の承認とdeploy直前のcapacity再確認を開始条件とした。
 
+## 後続変更
+
+設計レビュー後、個人MVPに対して過剰だったGitHub App / push Webhook同期とtransactional outbox / relayを廃止した。現行設計はTimerによるcommit SHA確認と全件reconcile、Storage Queueへの直接投入を採用する。embeddingは`text-embedding-3-small`へ変更した。以下は変更前の調査・判断記録として保持する。
+
 ## T1. Hosted Agent、検索tool、deploy
 
 - Python 3.13、Agent Frameworkの`ResponsesHostServer`、`main.py`、in-processの`knowledge_search` toolを採用した。

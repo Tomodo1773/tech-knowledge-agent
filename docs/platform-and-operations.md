@@ -9,7 +9,7 @@
 | 主要region | Japan East |
 | capacity不足時の候補 | East US 2 |
 | chat / agent | `gpt-5.6-luna` version `2026-07-09`、GlobalStandard、10K TPM、Responses API、reasoning `max` |
-| embedding | `text-embedding-3-large` version `1`、GlobalStandard、10K TPM。vector field設定は[architecture.md](architecture.md#cosmos-db検索ストア)を参照 |
+| embedding | `text-embedding-3-small` version `1`、GlobalStandard、10K TPM。vector field設定は[architecture.md](architecture.md#cosmos-db検索ストア)を参照 |
 | judge | chatと同じLuna deploymentを共用。smokeではreasoning `max`を必須にしない |
 | Functions | Flex Consumption、always-ready 0 |
 | Cosmos DB | Free Tierをaccount作成時に有効化。`chunks` containerはdedicated provisioned throughput 1,000 RU/s。shared throughput databaseは使わない |
@@ -43,7 +43,7 @@ Agent version、deploy後に判明するAgent principalへのCosmos data-plane r
 
 ## Bootstrap
 
-初回bootstrapで、GitHub Appの作成・対象repositoryへのinstall・Webhook登録、LINE channel設定、Key Vaultへのsecret登録を行う。実値をBicep parameter、repository、ログへ残さない。Bicepにはsecret名と参照だけを置く。
+初回bootstrapで、LINE channel設定、Webhook再送の有効化、Key Vaultへのsecret登録を行う。公開GitHub repositoryのowner、repository、default branchはdeploy時の非機密設定として与える。実値を文書やログへ残さず、Bicepにはsecret名と参照だけを置く。
 
 Hosted Agentはsource-code deploymentを使う。`azd ai agent init --deploy-mode code --runtime python_3_13 --entry-point main.py --dep-resolution remote_build`を起点にし、artifactは`main.py`、tool module、`requirements.txt`、`.agentignore`、`azure.yaml`で構成する。remote buildに問題が出た場合だけbundled packagesを検討する。
 

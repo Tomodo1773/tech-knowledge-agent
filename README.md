@@ -4,8 +4,8 @@ Azure AI関連スタックを学びながら、自分の技術ブログをLINE�
 
 ## MVPで提供すること
 
-- GitHubのdefault branchにある`articles/**/*.md`を同期し、ベクトル検索できるようにする
-- GitHub Appで記事を読み、push Webhookで更新を非同期同期する
+- 公開GitHub repositoryのdefault branchにある`articles/**/*.md`を同期し、ベクトル検索できるようにする
+- Timer Functionでdefault branchのcommit SHAを定期確認し、変更時に全件reconcileする
 - LINEの1:1チャットで質問を受け、検索根拠へのリンク付きでPush Messageを返す
 - 処理状況と失敗を追跡できる最低限のトレースと約10件のsmoke evaluationを持つ
 
@@ -15,15 +15,15 @@ Azure AI関連スタックを学びながら、自分の技術ブログをLINE�
 
 ```mermaid
 flowchart LR
-  GH[GitHub / Zenn articles] -->|push| GHW[GitHub Webhook Function]
-  GHW --> T[Table Storage: jobs / outbox]
-  T -->|outbox relay| Q[Storage Queue]
+  GH[GitHub / Zenn articles] -->|periodic SHA check| SYNC[Sync Scheduler Function]
+  SYNC --> T[Table Storage: jobs / sync state]
+  SYNC -->|direct enqueue| Q[Storage Queue]
   Q --> IDX[Indexer Function]
   IDX --> E[Foundry embedding]
   IDX --> C[Cosmos DB: chunks]
   LINE[LINE] -->|message| LWH[LINE Webhook Function]
   LWH --> T
-  T -->|outbox relay| Q
+  LWH -->|direct enqueue| Q
   Q --> W[Agent Worker Function]
   W --> A[Foundry Hosted Agent]
   A -->|knowledge_search| C
@@ -32,9 +32,9 @@ flowchart LR
 
 ## 採用と重要な決定
 
-- AzureはJapan Eastを第一候補にし、FoundryはLuna Max、埋め込みはlargeを使う。
+- AzureはJapan Eastを第一候補にし、FoundryはLuna Max、埋め込みは`text-embedding-3-small`を使う。
 - 検索対象は`articles/**/*.md`の全記事。`published`の値では除外しない。
-- GitHubの読取りは対象repository限定のGitHub App、Azure内の接続はManaged Identityを使う。
+- 公開GitHub repositoryは認証なしのGitHub APIで読み、Azure内の接続はManaged Identityを使う。
 - 個人MVPなので、deploy後の確認は一度の疎通確認に限定し、失敗時は修正して再deployする。
 - コスト方針とAzure Budgetは[プラットフォームと運用](docs/platform-and-operations.md#コストと日常運用)を正とする。
 

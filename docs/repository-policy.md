@@ -17,7 +17,7 @@
 - 実値はGitHub Environment secrets、Azure Key Vault、またはGit管理外のローカル設定へ置く。非機密扱いのIDもこのrepositoryではsecretとして扱う。
 - `.azure/`、`.env`、`*.local.bicepparam`、deployment output、無加工のAzure CLI / `azd`ログをcommitしない。
 - sample、test fixture、screenshot、Issue / PR、Actionsログにも実値を載せない。
-- Webhook payload、job state、outbox payloadは運用データであり、repositoryへcommitしない。custom telemetryにはcredentialを記録しない。
+- Webhook payload、job state、Queue payloadは運用データであり、repositoryへcommitしない。custom telemetryにはcredentialを記録しない。
 - Bicepにはplaceholder、環境変数参照、決定的な命名規則だけを置き、デプロイ後の完全なresource名を逆輸入しない。
 - 公開ActionsではAzure関連値をmaskし、deployment outputをログ、PR comment、artifactへ出さない。
 - credentialを誤ってcommitした場合は、履歴を書き換える前に対象credentialを失効・rotateする。
