@@ -49,13 +49,14 @@ lintとtestはruffとpytestを使う。testの対象はfront matter検証、chun
 - 実記事から作るsmoke dataset、baseline後の改善優先度
 - 固定するAVM versionと、必要propertyが未対応の場合のraw Bicep
 - Function App MIとHosted Agent identityに付与するFoundryのdata-plane role名
+- Foundryが`responseId`を保持する期間の実測値と、会話継続の上限7日をそれに収める調整
 
 ## MVP完了条件
 
 - `articles/**/*.md`を初期同期でき、default branchの変更と削除が次回Timerで反映される。
 - 変更のない記事が再embeddingされないことを、二回目のTimer実行で確認できる。
 - 許可した利用者からのSlack DMに、根拠記事へのリンク付きでthread返信できる。
-- 同じSlack threadの直前の質問を踏まえた追い質問に答えられ、トップレベルDMまたは24時間経過後は新しい会話として扱われる。
+- 同じSlack threadの直前の質問を踏まえた追い質問に答えられ、トップレベルDMまたは7日経過後は新しい会話として扱われる。
 - Slack `event_id`の重複チェックにより、event再送で同じQueue messageを二重投入しない。
 - allowlist外のworkspace・利用者とDM以外の会話には回答せず、監査記録だけが残る。
 - AgentがManaged IdentityでCosmosを検索し、credentialをコードやログへ出さない。

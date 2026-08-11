@@ -9,7 +9,7 @@ Azure AI関連スタックを学びながら、自分の技術ブログをSlack�
 - Slack AppとのDMで質問を受け、検索根拠へのリンク付きでスレッド返信する。同じスレッドの直前の会話を踏まえた追い質問に答えられる
 - 処理状況と失敗を追跡できる最低限のトレースと約10件のsmoke evaluationを持つ
 
-画像OCR、複数利用者・高可用性、Slack Agent機能・Block Kit・streaming、rollback機構、continuous evaluationはMVPの対象外とする。
+画像OCR、複数利用者・高可用性、Block Kit、streaming、rollback機構、continuous evaluationはMVPの対象外とする。Slack Agent機能は有料planを必要とするため見送り、回答待ちは`eyes` reactionで示す。判断の詳細は[Slack Agent機能を採用しない理由](docs/platform-and-operations.md#slack-agent機能を採用しない理由)を参照する。
 
 ## 最小構成
 
