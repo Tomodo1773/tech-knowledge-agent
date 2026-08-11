@@ -34,11 +34,11 @@ Azure Resource Managerで表せる基盤はBicepを正とし、`azd provision`�
 | module | 担当 |
 |---|---|
 | `infra/main.bicep` | subscription / resource group |
-| `app/functions.bicep` | FunctionsとStorage |
-| `app/data.bicep` | Cosmos DB |
-| `app/foundry.bicep` | Foundry、model deployment、Hosted Agent関連基盤 |
-| `app/observability.bicep` | Log Analytics、Application Insights、Budget / alert |
-| `app/security.bicep` | Key Vaultとidentity |
+| `infra/app/functions.bicep` | FunctionsとStorage |
+| `infra/app/data.bicep` | Cosmos DB |
+| `infra/app/foundry.bicep` | Foundry、model deployment、Hosted Agent関連基盤 |
+| `infra/app/observability.bicep` | Log Analytics、Application Insights、Budget / alert |
+| `infra/app/security.bicep` | Key Vaultとidentity |
 
 Agent version、deploy後に判明するAgent principalへのCosmos data-plane role assignment、evaluation datasetはBicepの外にある。これらはローカルのpost-deploy scriptで実行する。
 
@@ -61,7 +61,9 @@ deployはローカルから`azd`で行い、GitHub ActionsからはAzureへロ�
 - event subscriptionに`app_home_opened`と`app_context_changed`が加わる。
 - statusには2分のtimeoutがあり、それまでにメッセージを送らないと消える。
 
-Hosted Agentはsource-code deploymentを使う。`requirements.txt`の生成方法は[ローカル開発](#ローカル開発)を正とする。`azd ai agent init --deploy-mode code --runtime python_3_13 --entry-point main.py --dep-resolution remote_build`を起点にし、artifactは`main.py`、tool module、`requirements.txt`、`.agentignore`、`azure.yaml`で構成する。remote buildに問題が出た場合だけbundled packagesを検討する。
+Hosted AgentはResponses protocolのsource-code deploymentを使う。現在の`azd`ではrepository rootの`azure.yaml`がFoundry project、model deployment、Hosted Agent serviceとdeploy設定の正本であり、Bicepを使うこのprojectでは`infra.provider: bicep`と`infra.path: ./infra`で接続する。旧来の`agent.manifest.yaml` / `agent.yaml`を正本にしない。
+
+実装開始時は現行の`azd ai agent init --protocol responses --deploy-mode code`が生成する構成と公式Agent Framework sampleを確認し、既存fileを上書きせず必要部分だけ取り込む。`azd`とFoundry extensionのversionは、その時点の公式quickstartを基準に`azure.yaml`の`requiredVersions`へ固定する。Agent sourceは`src/agent/`に置き、`requirements.txt`の生成方法は[ローカル開発](#ローカル開発)を正とする。
 
 ## ローカル開発
 
@@ -79,7 +81,9 @@ deploy後にdevで一度だけ、Agent起動・Cosmos検索・Slack DMのスレ�
 
 ## 参考
 
-- [Hosted Agent code deployment](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/deploy-hosted-agent-code)
+- [azure.yaml reference for hosted agents](https://learn.microsoft.com/azure/foundry/agents/concepts/azure-yaml-reference)
+- [Agent FrameworkのFoundry Hosted Agent hosting](https://learn.microsoft.com/agent-framework/hosting/foundry-hosted-agent)
+- [Hosted Agent deployment](https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent)
 - [Responses API](https://learn.microsoft.com/azure/foundry/openai/how-to/responses)
 - [Cosmos DB vector search](https://learn.microsoft.com/azure/cosmos-db/nosql/vector-search)
 - [Flex Consumption plan](https://learn.microsoft.com/azure/azure-functions/flex-consumption-plan)
