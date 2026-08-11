@@ -5,7 +5,6 @@
 ## 開始条件
 
 - [プラットフォームと運用の費用方針](platform-and-operations.md#コストと日常運用)に従った実resource作成の許可を得ること
-- subscriptionのCosmos DB Free Tierが未使用であることを確認すること。使用済みならserverlessへ切り替える
 - deploy直前にFoundryのregion、SKU、version、TPMのcapacity / quotaを再確認すること
 - LINE、Key VaultのbootstrapとGitHub同期元の非機密設定に必要な実値を安全に用意できること
 

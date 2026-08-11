@@ -15,8 +15,6 @@
 
 GlobalStandardによる地域外処理を許容する。capacityは予約ではないため、`azd provision`直前に同じregion、SKU、version、TPMを再確認し、利用不可ならEast US 2を検討する。当日の実測snapshotは[調査記録](research/implementation-readiness-2026-08-11.md#t2-regionmodelplan費用)に残す。
 
-Cosmos DBのFree Tierはsubscriptionに一つだけで、account作成時にしか有効化できない。既に他で使用済みの場合はprovisioned 1,000 RU/sが月額目安を大きく超えるため、serverlessへ切り替える。判断は実resource作成前に行う。
-
 Functionsはalways-ready 0で始める。LINE Webhookはコールドスタート時に2秒の応答期限を超えることがあるが、Webhook再送と個人利用の使用頻度を踏まえて許容する。実際に困る場合だけalways-ready instanceの追加を検討する。トップレベルで重い依存をimportしない実装規約は[architecture.md](architecture.md#line質問)を正とする。
 
 ## コストと日常運用
