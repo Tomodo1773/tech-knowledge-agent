@@ -9,7 +9,8 @@
     "queues": {
       "batchSize": 1,
       "newBatchThreshold": 0,
-      "maxDequeueCount": 5
+      "maxDequeueCount": 5,
+      "messageEncoding": "base64"
     }
   },
   "extensionBundle": {

@@ -22,7 +22,7 @@ blob SHAはGitが内容から決める識別子なので、自前のcontent hash
 
 1. Slack Events Functionはraw request body、`X-Slack-Request-Timestamp`、`X-Slack-Signature`を使って署名と5分以内のtimestampを検証する。Events APIの`url_verification`はQueueへ入れず、その場でchallengeを返す。HTTP triggerは`authLevel: anonymous`とし、Request URLへ関数キーを載せない。保護は署名検証とallowlistで行う。
 2. `event_callback`では、許可したworkspaceと利用者からの`message.im`であり、`subtype`と`bot_id`を持たない通常のテキストメッセージであることを確認する。外側の`event_id`を`event` tableへInsert Entityで書き込み、409なら再送とみなして何も投入せず2xxを返す。Insert成功時だけStorage Queueへ投入して2xxを返す。read-then-writeは使わず、Insertの成否そのものを排他とする。Insert成功後にQueue投入が失敗したeventは再送でも復旧しないが、利用者が質問し直せば足りるため補償処理は持たない。
-3. Agent Worker Functionは処理開始時に`reactions.add`で利用者メッセージへ`eyes`を付け、受け付けたことを示す。回答後も外さず、受信の記録として残す。この呼び出しはbest effortとし、失敗しても回答処理を止めない。
+3. Agent Worker Functionは処理開始時に`reactions.add`で`messageTs`が指す利用者メッセージへ`eyes`を付け、受け付けたことを示す。回答後も外さず、受信の記録として残す。この呼び出しはbest effortとし、失敗しても回答処理を止めない。追い質問では毎回その質問自身へ付くため、`already_reacted`にはならない。
 4. Agent Worker FunctionがHosted Agentを呼び、Agentの`knowledge_search` toolがCosmosを検索する。
 5. Agent Worker FunctionがSlack Web APIの`chat.postMessage`で、元メッセージを親とするスレッドへ回答する。`rootTs`は`event.thread_ts`があればその値、なければ`event.ts`とする。回答は`text`ではなく`markdown_text`で送り、Block Kitは採用しない。citationは重複を除いたMarkdown linkを末尾の共通`## Sources` blockへ置く。回答が4,000文字を超える場合は本文を先に切り詰め、source URLをすべて保持する。`unfurl_links`と`unfurl_media`は`false`にする。
 
@@ -66,7 +66,7 @@ MarkdownはCRLF / CRをLFへ正規化し、空本文を拒否する。chunkはUn
 
 Storage Queueと同じStorage AccountのTable Storageに`state` tableを一つ置き、次の3種類だけを保持する。outbox、relay、job status machineは作らない。
 
-job storeを持たないため、Agent Workerが必要とする情報はQueue messageが運ぶ。messageはSlackの`eventId`、`teamId`、`userId`、`channelId`、`rootTs`、質問文、telemetry metadataを持ち、Signing SecretとBot tokenは置かない。Slack IDとtimestampは送信先と会話識別に必要なので生の値を運ぶ。Queueは同じStorage Account内にあり、Managed Identityでのみ読み書きされ、保存時に暗号化される。
+job storeを持たないため、Agent Workerが必要とする情報はQueue messageが運ぶ。messageはSlackの`eventId`、`teamId`、`userId`、`channelId`、`rootTs`、`messageTs`、質問文、telemetry metadataを持ち、Signing SecretとBot tokenは置かない。`rootTs`は返信先スレッドの識別、`messageTs`は`eyes`を付ける利用者メッセージ自身の識別に使う。トップレベルDMでは両者が一致し、追い質問では異なる。Slack IDとtimestampは送信先と会話識別に必要なので生の値を運ぶ。Queueは同じStorage Account内にあり、Managed Identityでのみ読み書きされ、保存時に暗号化される。
 
 | partition | key | 保持する値 |
 |---|---|---|
@@ -83,6 +83,7 @@ Queue messageのwire keyはcamelCaseとし、次の形だけを許可する。`e
   "userId": "...",
   "channelId": "...",
   "rootTs": "...",
+  "messageTs": "...",
   "question": "...",
   "telemetry": {
     "traceparent": "...",

@@ -4,7 +4,11 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from knowledge_agent.http_transport import GitHubHttpTransport, RemoteRequestError
+from knowledge_agent.http_transport import (
+    GitHubHttpTransport,
+    RemoteRequestError,
+    SlackHttpTransport,
+)
 
 
 @dataclass
@@ -122,3 +126,71 @@ def test_does_not_retry_non_retryable_status_or_network_error() -> None:
     with pytest.raises(RemoteRequestError, match="request failed"):
         network_transport.get_text("https://api.github.com/private-owner")
     assert len(network_connections) == 1
+
+
+class FakeSlackConnection(FakeConnection):
+    def request(  # type: ignore[override]
+        self,
+        method: str,
+        url: str,
+        body: bytes | None = None,
+        *,
+        headers: dict[str, str],
+    ) -> None:
+        self.requests.append((method, url, headers))
+        self.body = body
+
+
+def _slack_factory(
+    results: list[FakeResponse | Exception],
+) -> tuple[object, list[FakeSlackConnection]]:
+    connections: list[FakeSlackConnection] = []
+
+    def create(host: str, port: int | None, timeout: float) -> FakeSlackConnection:
+        assert host == "slack.com"
+        assert port == 443
+        assert timeout == 5.0
+        connection = FakeSlackConnection(results[len(connections)])
+        connections.append(connection)
+        return connection
+
+    return create, connections
+
+
+def test_slack_posts_json_with_bearer_token_and_retries_rate_limits() -> None:
+    factory, connections = _slack_factory(
+        [FakeResponse(429, retry_after="60"), FakeResponse(200, b'{"ok":true,"ts":"1.2"}')]
+    )
+    sleeps: list[float] = []
+    transport = SlackHttpTransport(
+        "xoxb-secret-token",
+        connection_factory=factory,  # type: ignore[arg-type]
+        sleep=sleeps.append,
+    )
+
+    assert transport.call("chat.postMessage", {"channel": "D1"}) == {"ok": True, "ts": "1.2"}
+    assert sleeps == [2.0]
+    method, path, headers = connections[-1].requests[0]
+    assert (method, path) == ("POST", "/api/chat.postMessage")
+    assert headers["Authorization"] == "Bearer xoxb-secret-token"
+    assert headers["Content-Type"] == "application/json; charset=utf-8"
+    assert connections[-1].body == b'{"channel": "D1"}'
+    assert all(connection.closed for connection in connections)
+
+
+def test_slack_rejects_bad_method_and_keeps_token_out_of_failures() -> None:
+    factory, connections = _slack_factory([FakeResponse(500), FakeResponse(500), FakeResponse(500)])
+    transport = SlackHttpTransport(
+        "xoxb-secret-token",
+        connection_factory=factory,  # type: ignore[arg-type]
+        sleep=lambda _: None,
+    )
+
+    with pytest.raises(RemoteRequestError, match="method is invalid"):
+        transport.call("/api/chat.postMessage", {})
+    assert connections == []
+
+    with pytest.raises(RemoteRequestError, match="HTTP 500") as captured:
+        transport.call("chat.postMessage", {})
+    assert len(connections) == 3
+    assert "xoxb" not in str(captured.value)

@@ -5,6 +5,7 @@
     "userId": "U_FIXTURE",
     "channelId": "D_FIXTURE",
     "rootTs": "1720000000.000001",
+    "messageTs": "1720000100.000002",
     "question": "How does the sync work?",
     "telemetry": {
       "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",

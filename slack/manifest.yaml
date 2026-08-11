@@ -1,0 +1,39 @@
+# Slack App manifest template for the personal knowledge agent.
+#
+# Replace <FUNCTION_APP_HOST> with the deployed Function App host before importing.
+# The Events Function must be deployed first: Slack sends url_verification when the
+# Request URL is saved. This template holds no secrets and no real Request URL, so
+# the Signing Secret and Bot token stay in Key Vault only.
+display_information:
+  name: Tech Knowledge Agent
+  description: Answers technical questions from the indexed personal knowledge base.
+  background_color: '#1f2933'
+
+features:
+  bot_user:
+    display_name: Tech Knowledge Agent
+    always_online: false
+  app_home:
+    home_tab_enabled: false
+    # Both flags are required: without the read-only flag the Messages tab shows no
+    # composer and direct messages cannot be sent.
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+
+oauth_config:
+  scopes:
+    bot:
+      - im:history
+      - chat:write
+      - reactions:write
+
+settings:
+  event_subscriptions:
+    request_url: https://<FUNCTION_APP_HOST>/api/slack/events
+    bot_events:
+      - message.im
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

@@ -26,7 +26,7 @@ Function AppとHosted Agentは依存とdeploy単位が異なるため、別のuv
 | `src/functions/knowledge_agent/contracts.py` | Queue、Table、Cosmos、設定名の共有契約 |
 | `src/functions/knowledge_agent/sync.py`、`github_source.py`、`chunking.py` | GitHub同期と外部接続を持たない変換処理 |
 | `src/functions/knowledge_agent/settings.py`、`http_transport.py`、`azure_adapters.py`、`sync_function.py`、`sync_runtime.py` | 同期設定、匿名GitHub HTTP、Azure SDK adapter、Timer handlerと遅延runtime結線 |
-| `src/functions/knowledge_agent/state.py`、`slack_events.py`、`worker.py`、`telemetry.py` | 状態、Slack受信・応答、Agent呼び出し、観測 |
+| `src/functions/knowledge_agent/state.py`、`slack_events.py`、`worker.py`、`slack_runtime.py`、`telemetry.py` | 状態、Slack受信・応答、Agent呼び出し、Slack/Worker用の遅延runtime結線、観測 |
 | `src/functions/pyproject.toml`、`src/functions/uv.lock` | Function Appの依存とtool設定 |
 | `src/functions/tests/` | Azureへ接続しないFunction Appのunit test |
 | `src/agent/main.py`、`src/agent/knowledge_search.py` | Responses protocolのHosted AgentとCosmos検索tool |
@@ -147,9 +147,13 @@ Hosted Agent / `azd`、Azure IaC / RBAC / capacity、Functions / Slackの3観点
 
 Slack Events Function、Queue、Agent Worker、conversation state、`eyes` reaction、thread返信を接続する。Request URLのbootstrap後、トップレベルDM一件と追い質問一件を通し、allowlist外、再送event、poison messageも確認する。
 
+**進捗:** 2026-08-12に実resourceへ接続しないcode-side sliceを完了した。匿名HTTP trigger、`slack-questions` Queue trigger、Table event claim、conversation state、Slack Web API、Hosted Agent呼び出しを結線した。event重複はInsert Entityの成否だけを排他とし、allowlist外とDM以外は`unauthorized_source` / `unsupported_conversation_type`の監査記録を残して2xxを返す。Hosted Agentは`KNOWLEDGE_AGENT_ENDPOINT`を`AzureOpenAI`の`base_url`へ渡し、Managed Identity tokenを`azure_ad_token_provider`で更新する。`previous_response_id`は7日以内の参照だけを使い、Agent応答→conversation state保存→thread返信の順にして再試行で二重投稿しないようにした。Slack App manifest templateとQueueのbase64 encodingも固定した。Signing SecretとBot tokenは設定の`repr`にもerrorにも出ない。実Slack / Azure通信とdeployは行っていない。
+
+`eyes`は質問メッセージ自身へ付ける必要があるため、Queue message契約へ`messageTs`を追加し[architecture.md](architecture.md#状態とメッセージ契約)とfixtureを更新した。
+
 実装済みmoduleの結線と一つのSlack Appを扱うため、deployと疎通確認は直列で行う。
 
-**gate:** Slack DM → Queue → Agent → Cosmos → Slack threadが成功し、`previous_response_id`で追い質問が継続する。
+**gate:** code-sideのunit gateは完了。Slack App作成、Request URL登録、Key Vaultへのsecret投入の後に、Slack DM → Queue → Agent → Cosmos → Slack threadが成功し、`previous_response_id`で追い質問が継続することを実環境で確認するliveゲートが残る。
 
 ### 7. 観測、評価、配送の仕上げ
 

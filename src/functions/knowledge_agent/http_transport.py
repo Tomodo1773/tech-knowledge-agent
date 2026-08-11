@@ -1,9 +1,10 @@
-"""Injectable stdlib GitHub transport with bounded retries and sanitized failures."""
+"""Injectable stdlib HTTP transports with bounded retries and sanitized failures."""
 
 from __future__ import annotations
 
 import http.client
 import json
+import re
 import time
 from collections.abc import Callable
 from typing import Any, Protocol
@@ -15,6 +16,10 @@ _RESPONSE_TIMEOUT_SECONDS = 30.0
 _MAX_RETRY_AFTER_SECONDS = 2.0
 _MAX_RESPONSE_BYTES = 5_000_000
 _ALLOWED_HOSTS = frozenset({"api.github.com", "raw.githubusercontent.com"})
+
+_SLACK_HOST = "slack.com"
+_SLACK_MAX_RESPONSE_BYTES = 200_000
+_SLACK_METHOD_PATTERN = re.compile(r"^[a-z][a-zA-Z]*(\.[a-z][a-zA-Z]*)+$")
 
 
 class RemoteRequestError(RuntimeError):
@@ -34,7 +39,14 @@ class HttpsConnection(Protocol):
 
     def connect(self) -> None: ...
 
-    def request(self, method: str, url: str, *, headers: dict[str, str]) -> None: ...
+    def request(
+        self,
+        method: str,
+        url: str,
+        body: bytes | None = None,
+        *,
+        headers: dict[str, str],
+    ) -> None: ...
 
     def getresponse(self) -> HttpResponse: ...
 
@@ -48,6 +60,17 @@ def _connection_factory(host: str, port: int | None, timeout: float) -> HttpsCon
     return http.client.HTTPSConnection(host, port=port, timeout=timeout)
 
 
+def _retry_delay(response: HttpResponse | None, attempt: int) -> float:
+    raw_retry_after = response.getheader("Retry-After") if response is not None else None
+    try:
+        retry_after = float(raw_retry_after) if raw_retry_after is not None else None
+    except ValueError:
+        retry_after = None
+    if retry_after is not None and retry_after >= 0:
+        return min(retry_after, _MAX_RETRY_AFTER_SECONDS)
+    return min(0.25 * (2 ** (attempt - 1)), _MAX_RETRY_AFTER_SECONDS)
+
+
 class GitHubHttpTransport:
     def __init__(
         self,
@@ -57,17 +80,6 @@ class GitHubHttpTransport:
     ) -> None:
         self._connection_factory = connection_factory
         self._sleep = sleep
-
-    @staticmethod
-    def _retry_delay(response: HttpResponse | None, attempt: int) -> float:
-        raw_retry_after = response.getheader("Retry-After") if response is not None else None
-        try:
-            retry_after = float(raw_retry_after) if raw_retry_after is not None else None
-        except ValueError:
-            retry_after = None
-        if retry_after is not None and retry_after >= 0:
-            return min(retry_after, _MAX_RETRY_AFTER_SECONDS)
-        return min(0.25 * (2 ** (attempt - 1)), _MAX_RETRY_AFTER_SECONDS)
 
     def _get(self, url: str, *, accept: str) -> bytes:
         parsed = urlsplit(url)
@@ -130,7 +142,7 @@ class GitHubHttpTransport:
                 raise RemoteRequestError("GitHub response failed") from None
             finally:
                 connection.close()
-            self._sleep(self._retry_delay(response, attempt))
+            self._sleep(_retry_delay(response, attempt))
         raise AssertionError("retry loop exhausted")
 
     def get_json(self, url: str) -> Any:
@@ -146,3 +158,79 @@ class GitHubHttpTransport:
             return content.decode("utf-8")
         except UnicodeDecodeError:
             raise RemoteRequestError("GitHub response was not UTF-8") from None
+
+
+class SlackHttpTransport:
+    """POSTs JSON to the Slack Web API. The bot token never appears in errors."""
+
+    def __init__(
+        self,
+        token: str,
+        *,
+        connection_factory: ConnectionFactory = _connection_factory,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        if not isinstance(token, str) or not token.strip():
+            raise ValueError("Slack bot token must not be empty")
+        self._token = token
+        self._connection_factory = connection_factory
+        self._sleep = sleep
+
+    def call(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(method, str) or not _SLACK_METHOD_PATTERN.fullmatch(method):
+            raise RemoteRequestError("Slack API method is invalid")
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers = {
+            "Authorization": f"Bearer {self._token}",
+            "Content-Type": "application/json; charset=utf-8",
+            "Accept": "application/json",
+            "User-Agent": "tech-knowledge-agent",
+        }
+
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            connection = self._connection_factory(
+                _SLACK_HOST,
+                443,
+                _CONNECT_TIMEOUT_SECONDS,
+            )
+            response: HttpResponse | None = None
+            try:
+                connection.connect()
+                if connection.sock is None:
+                    raise RemoteRequestError("Slack connection did not open")
+                connection.sock.settimeout(_RESPONSE_TIMEOUT_SECONDS)
+                connection.request("POST", f"/api/{method}", body, headers=headers)
+                response = connection.getresponse()
+                if response.status == 429 or 500 <= response.status < 600:
+                    if attempt == _MAX_ATTEMPTS:
+                        raise RemoteRequestError(
+                            f"Slack request failed with HTTP {response.status}"
+                        )
+                elif not 200 <= response.status < 300:
+                    raise RemoteRequestError(f"Slack request failed with HTTP {response.status}")
+                else:
+                    content = response.read(_SLACK_MAX_RESPONSE_BYTES + 1)
+                    if len(content) > _SLACK_MAX_RESPONSE_BYTES:
+                        raise RemoteRequestError("Slack response exceeded the size limit")
+                    return _slack_json(content)
+            except TimeoutError:
+                if attempt == _MAX_ATTEMPTS:
+                    raise RemoteRequestError("Slack request timed out") from None
+            except OSError:
+                raise RemoteRequestError("Slack request failed") from None
+            except http.client.HTTPException:
+                raise RemoteRequestError("Slack response failed") from None
+            finally:
+                connection.close()
+            self._sleep(_retry_delay(response, attempt))
+        raise AssertionError("retry loop exhausted")
+
+
+def _slack_json(content: bytes) -> dict[str, Any]:
+    try:
+        parsed = json.loads(content)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise RemoteRequestError("Slack response was not valid JSON") from None
+    if not isinstance(parsed, dict):
+        raise RemoteRequestError("Slack response was not a JSON object")
+    return parsed

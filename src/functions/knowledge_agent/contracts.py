@@ -121,6 +121,7 @@ class QueueMessage:
     user_id: str
     channel_id: str
     root_ts: str
+    message_ts: str
     question: str
     telemetry: TraceContext
 
@@ -131,6 +132,7 @@ class QueueMessage:
             ("userId", self.user_id),
             ("channelId", self.channel_id),
             ("rootTs", self.root_ts),
+            ("messageTs", self.message_ts),
             ("question", self.question),
         ):
             _require_non_empty(value, field)
@@ -142,6 +144,7 @@ class QueueMessage:
             "userId": self.user_id,
             "channelId": self.channel_id,
             "rootTs": self.root_ts,
+            "messageTs": self.message_ts,
             "question": self.question,
             "telemetry": self.telemetry.to_dict(),
         }
@@ -155,7 +158,16 @@ class QueueMessage:
     def from_dict(cls, data: Mapping[str, Any]) -> QueueMessage:
         _require_keys(
             data,
-            {"eventId", "teamId", "userId", "channelId", "rootTs", "question", "telemetry"},
+            {
+                "eventId",
+                "teamId",
+                "userId",
+                "channelId",
+                "rootTs",
+                "messageTs",
+                "question",
+                "telemetry",
+            },
             "queue message",
         )
         telemetry = data["telemetry"]
@@ -167,6 +179,7 @@ class QueueMessage:
             user_id=data["userId"],
             channel_id=data["channelId"],
             root_ts=data["rootTs"],
+            message_ts=data["messageTs"],
             question=data["question"],
             telemetry=TraceContext.from_dict(telemetry),
         )

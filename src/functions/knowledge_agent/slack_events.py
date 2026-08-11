@@ -1,12 +1,15 @@
-"""Pure Slack request validation, event selection, and message formatting."""
+"""Slack request validation, event selection, reply formatting, and Web API calls."""
 
 from __future__ import annotations
 
 import hashlib
 import hmac
-from collections.abc import Mapping
+import json
+import secrets
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Protocol
 
 from knowledge_agent.contracts import EventStateEntity, QueueMessage, TraceContext
 
@@ -14,9 +17,20 @@ SLACK_SIGNATURE_MAX_AGE_SECONDS = 300
 SLACK_MARKDOWN_LIMIT = 4000
 _SOURCES_SEPARATOR = "\n\n## Sources\n"
 
+# The audit vocabulary is the one architecture.md fixes, not the selector's internals.
+_AUDIT_REASONS = {
+    "team_not_allowed": "unauthorized_source",
+    "user_not_allowed": "unauthorized_source",
+    "not_dm_message": "unsupported_conversation_type",
+}
+
 
 class SlackMessageFormatError(ValueError):
     """Raised when a Slack response cannot preserve its source contract."""
+
+
+class SlackApiError(RuntimeError):
+    """Raised with Slack's error code only, never with the bot token."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +50,7 @@ class AcceptedSlackEvent:
     user_id: str
     channel_id: str
     root_ts: str
+    message_ts: str
     question: str
 
     def queue_message(self, telemetry: TraceContext) -> QueueMessage:
@@ -45,6 +60,7 @@ class AcceptedSlackEvent:
             user_id=self.user_id,
             channel_id=self.channel_id,
             root_ts=self.root_ts,
+            message_ts=self.message_ts,
             question=self.question,
             telemetry=telemetry,
         )
@@ -124,6 +140,7 @@ def select_slack_event(
         user_id=user_id,
         channel_id=channel_id,
         root_ts=root_ts,
+        message_ts=event_ts,
         question=question,
     )
 
@@ -148,3 +165,127 @@ def truncate_slack_markdown(markdown: str, *, limit: int = SLACK_MARKDOWN_LIMIT)
     body_limit = limit - source_size
     shortened_body = body[: body_limit - 1].rstrip() + "…"
     return f"{shortened_body}\n\n{source_block}"
+
+
+class SlackTransport(Protocol):
+    def call(self, method: str, payload: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class SlackWebClient:
+    """Minimal Slack Web API surface: an `eyes` receipt and one threaded reply."""
+
+    def __init__(self, transport: SlackTransport) -> None:
+        self._transport = transport
+
+    def _call(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self._transport.call(method, payload)
+        if response.get("ok") is not True:
+            error = response.get("error")
+            code = error if isinstance(error, str) and error.strip() else "unknown_error"
+            raise SlackApiError(f"Slack {method} failed: {code}")
+        return response
+
+    def add_eyes_reaction(self, *, channel_id: str, timestamp: str) -> None:
+        self._call(
+            "reactions.add",
+            {"channel": channel_id, "timestamp": timestamp, "name": "eyes"},
+        )
+
+    def post_thread_reply(self, *, channel_id: str, thread_ts: str, markdown: str) -> None:
+        self._call(
+            "chat.postMessage",
+            {
+                "channel": channel_id,
+                "thread_ts": thread_ts,
+                "markdown_text": truncate_slack_markdown(markdown),
+                "unfurl_links": False,
+                "unfurl_media": False,
+            },
+        )
+
+
+class EventClaimStore(Protocol):
+    def claim(self, event: EventStateEntity) -> bool: ...
+
+
+class QuestionPublisher(Protocol):
+    def publish(self, message: QueueMessage) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SlackHttpResult:
+    """What the HTTP trigger returns, plus the reason worth auditing."""
+
+    status_code: int
+    body: str
+    audit_reason: str
+
+
+def new_trace_context() -> TraceContext:
+    """Start a sampled trace when no upstream context exists; Slack sends none."""
+    return TraceContext(traceparent=f"00-{secrets.token_hex(16)}-{secrets.token_hex(8)}-01")
+
+
+def _utc_timestamp(now: Callable[[], datetime]) -> str:
+    value = now()
+    if value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value):
+        raise ValueError("Slack clock must return a UTC datetime")
+    return value.isoformat().replace("+00:00", "Z")
+
+
+def handle_slack_request(
+    *,
+    raw_body: bytes,
+    timestamp_header: str | None,
+    signature_header: str | None,
+    signing_secret: str,
+    allowed_team_id: str,
+    allowed_user_id: str,
+    event_store: EventClaimStore,
+    publisher: QuestionPublisher,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    trace_context: Callable[[], TraceContext] = new_trace_context,
+) -> SlackHttpResult:
+    """Validate, deduplicate, and enqueue one Slack request.
+
+    Every outcome that Slack must not retry returns 2xx. Storage failures are left to
+    propagate so the caller answers 5xx and Slack redelivers the event.
+    """
+    try:
+        timestamp = int(timestamp_header) if timestamp_header is not None else None
+    except ValueError:
+        timestamp = None
+    if (
+        timestamp is None
+        or signature_header is None
+        or not verify_slack_signature(
+            raw_body,
+            timestamp,
+            signature_header,
+            signing_secret,
+            now=int(now().timestamp()),
+        )
+    ):
+        return SlackHttpResult(401, "", "invalid_signature")
+
+    try:
+        payload = json.loads(raw_body)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return SlackHttpResult(400, "", "invalid_json")
+    if not isinstance(payload, Mapping):
+        return SlackHttpResult(400, "", "invalid_json")
+
+    selection = select_slack_event(
+        payload,
+        allowed_team_id=allowed_team_id,
+        allowed_user_id=allowed_user_id,
+    )
+    if isinstance(selection, SlackChallenge):
+        return SlackHttpResult(200, selection.challenge, "url_verification")
+    if isinstance(selection, IgnoredSlackEvent):
+        return SlackHttpResult(200, "", _AUDIT_REASONS.get(selection.reason, selection.reason))
+
+    if not event_store.claim(selection.event_state(_utc_timestamp(now))):
+        return SlackHttpResult(200, "", "duplicate_event")
+    publisher.publish(selection.queue_message(trace_context()))
+    return SlackHttpResult(200, "", "accepted")
