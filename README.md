@@ -11,6 +11,10 @@ Azure AI関連スタックを学びながら、自分の技術ブログをSlack�
 
 画像OCR、複数利用者・高可用性、Block Kit、streaming、rollback機構、continuous evaluationはMVPの対象外とする。Slack Agent機能は有料planを必要とするため見送り、回答待ちは`eyes` reactionで示す。判断の詳細は[Slack Agent機能を採用しない理由](docs/platform-and-operations.md#slack-agent機能を採用しない理由)を参照する。
 
+## 実装状況
+
+実装計画Step 0〜3とStep 4のoffline sliceは完了した。日次Timer、匿名GitHub取得、chunk / embedding、Cosmos記事置換、Table同期状態までをmock integration testで確認済みである。Step 5はHosted Agent、`knowledge_search`、Managed Identity SDK adapter、postdeploy RBAC / endpoint配線のoffline実装まで進んだが、Agent dependency lockと実Foundry / Cosmos疎通は未完了である。Azure resourceはまだ作成していない。
+
 ## 最小構成
 
 ```mermaid
@@ -51,7 +55,8 @@ flowchart LR
 | [implementation-plan.md](docs/implementation-plan.md) | 着手条件、実装順、vertical slice、完了条件の正本 |
 | [repository-policy.md](docs/repository-policy.md) | 個人開発に見合う設計範囲、公開repository、IaC、供給網に関する恒久ポリシー |
 | [research/implementation-readiness-2026-08-11.md](docs/research/implementation-readiness-2026-08-11.md) | 調査時点の根拠・capacity snapshot・統合判断の記録。現行設計の正本ではない |
+| [research/implementation-current-spec-2026-08-11.md](docs/research/implementation-current-spec-2026-08-11.md) | 実装計画Step 0で確認したtooling、scaffold、RBAC、AVM versionの記録 |
 
 ## 現在地
 
-初期構想と実装方針は確定済みで、Azure resource、実装コード、外部サービス設定はまだ作成していない。実装は[実装計画](docs/implementation-plan.md)の開始条件を満たしてから行う。
+初期構想と実装方針は確定済みで、[実装計画](docs/implementation-plan.md)Step 0からStep 2のcoreと、Step 3のIaC / deploy wiringの静的実装まで進んだ。Azure resourceと外部サービス設定はまだ作成していない。既存Azure CLI内蔵Bicepは確認済みだが、固定AVMのrestoreはSocket Firewall非対応の依存取得になるためBicep buildを保留している。次は安全なrestore経路を確定してStep 3 gateを閉じる。

@@ -51,6 +51,12 @@ $sensitivePatterns = @(
     @{ Name = 'Deployed Azure endpoint'; Pattern = 'https://[a-z0-9][a-z0-9-]*\.(azurewebsites\.net|services\.ai\.azure\.com|documents\.azure\.com|vault\.azure\.net|blob\.core\.windows\.net)' }
 )
 
+$deployedEndpointPattern = ($sensitivePatterns | Where-Object Name -eq 'Deployed Azure endpoint').Pattern
+$rejectedProbe = 'https://' + 'real-resource.services.ai.azure.com/api/projects/project'
+if ($rejectedProbe -notmatch $deployedEndpointPattern) {
+    throw 'The repository policy must continue detecting deployed Azure endpoints.'
+}
+
 $violations = [System.Collections.Generic.List[string]]::new()
 foreach ($file in $files) {
     $normalized = $file.Replace('\', '/')

@@ -8,11 +8,11 @@ Sync Function（Timer Trigger）、Slack Events Function（HTTP Trigger）、Age
 
 ### GitHub同期
 
-Sync FunctionはTimer Triggerで日次起動し、同期を一つの実行で完結させる。同期用のQueue、job table、leaseは持たない。
+Sync FunctionはTimer Triggerで毎日18:00 UTC（JST 03:00）に起動し、`run_on_startup=false`とする。past-due起動も省略せず通常と同じ全件reconcileを行い、同期を一つの実行で完結させる。同期用のQueue、job table、leaseは持たない。
 
-1. 公開GitHub repositoryのdefault branchのcommit SHAを認証なしのGitHub APIで確認する。最終同期済みSHAと同じなら何もせず終了する。
+1. 公開GitHub repositoryのdefault branchのcommit SHAを認証なしのGitHub APIで確認する。最終同期済みSHAと同じ場合もtreeと保存済みarticle manifestを照合し、path、blob SHA、chunking version、削除候補まで完全一致したときだけ何もせず終了する。`sourceRevision`はcommit固定URLの参照先であり差分keyには使わないため、無関係なcommitで全記事を再embeddingしない。
 2. Git Trees APIを`recursive=1`で一度呼び、`articles/**/*.md`のpathとblob SHAの一覧を得る。
-3. Cosmosから`articleId`と`sourceBlobSha`の一覧を取得し、tree側と突き合わせる。
+3. Cosmosから各記事の全chunk manifestを取得し、`id`、`sourcePath`、`sourceRevision`、`sourceBlobSha`、`chunkingVersion`が記事内で一貫し、`chunkIndex`が0からの重複なし連番であることと件数を検査してからtree側と突き合わせる。不整合は前回の複数batch書込みが途中で止まった状態として`needs_reindex`にし、先頭chunkだけで正常と判定しない。
 4. 追加された記事、blob SHAが変わった記事、`chunkingVersion`が現行と異なる記事だけを再indexする。tree側に存在しない記事のchunkは削除する。
 5. 最終同期SHAと実行結果を記録する。
 
@@ -24,7 +24,7 @@ blob SHAはGitが内容から決める識別子なので、自前のcontent hash
 2. `event_callback`では、許可したworkspaceと利用者からの`message.im`であり、`subtype`と`bot_id`を持たない通常のテキストメッセージであることを確認する。外側の`event_id`を`event` tableへInsert Entityで書き込み、409なら再送とみなして何も投入せず2xxを返す。Insert成功時だけStorage Queueへ投入して2xxを返す。read-then-writeは使わず、Insertの成否そのものを排他とする。Insert成功後にQueue投入が失敗したeventは再送でも復旧しないが、利用者が質問し直せば足りるため補償処理は持たない。
 3. Agent Worker Functionは処理開始時に`reactions.add`で利用者メッセージへ`eyes`を付け、受け付けたことを示す。回答後も外さず、受信の記録として残す。この呼び出しはbest effortとし、失敗しても回答処理を止めない。
 4. Agent Worker FunctionがHosted Agentを呼び、Agentの`knowledge_search` toolがCosmosを検索する。
-5. Agent Worker FunctionがSlack Web APIの`chat.postMessage`で、元メッセージを親とするスレッドへ回答する。`rootTs`は`event.thread_ts`があればその値、なければ`event.ts`とする。回答は`text`ではなく`markdown_text`で送り、Block Kitは採用しない。回答は根拠記事のURLを末尾に残したまま4,000文字以内へ整形し、`unfurl_links`と`unfurl_media`は`false`にする。
+5. Agent Worker FunctionがSlack Web APIの`chat.postMessage`で、元メッセージを親とするスレッドへ回答する。`rootTs`は`event.thread_ts`があればその値、なければ`event.ts`とする。回答は`text`ではなく`markdown_text`で送り、Block Kitは採用しない。citationは重複を除いたMarkdown linkを末尾の共通`## Sources` blockへ置く。回答が4,000文字を超える場合は本文を先に切り詰め、source URLをすべて保持する。`unfurl_links`と`unfurl_media`は`false`にする。
 
 `markdown_text`を使うのは、Agentが生成するのが標準Markdownだからである。`text`フィールドはSlack独自の`mrkdwn`として解釈され、`**太字**`はそのまま表示され、`[題名](URL)`はリンクにならない。根拠記事へのリンクを壊さないため、標準Markdownをそのまま受け付ける`markdown_text`を正とし、Agent出力をmrkdwnへ変換する処理は書かない。`markdown_text`は`text`・`blocks`と併用できないため、`text`は指定しない。上限は12,000文字だが、読みやすさのため4,000文字で整形する。
 
@@ -54,7 +54,9 @@ Hosted AgentのResponses protocolが管理する質問と回答はFoundry側に�
 
 対象はGitHubのdefault branchにある`articles/**/*.md`の全件で、`published: true/false`を問わずmetadataとして保持する。`draft/**`、`x-articles/**`、rootの補助Markdown、非Markdownは対象外とする。`books/**/*.md`は内容追加時に別途有効化する。
 
-`title`、`emoji`、`type`、`topics[]`、`published`を必須front matterとし、`published_at`は任意、`slug`はfilenameとする。必須項目の欠落またはparse失敗は補完せず、対象外として同期結果のerrorへ残す。各chunkにはcommit SHA固定のGitHub blob URLを`sourceUrl`に保存する。公開Zenn URLは将来のoptional metadataである。調査時の件数とfront matter確認結果は[調査記録](research/implementation-readiness-2026-08-11.md#統合判断)に残す。
+`title`、`emoji`、`type`、`topics[]`、`published`を必須front matterとし、`published_at`は任意、`slug`はfilenameとする。必須項目の欠落またはparse失敗は補完しない。新規記事なら対象外としてerrorへ残し、他の追加・更新・削除は継続する。既存記事が不正化した場合だけ同期全体を失敗させ、書込み前に停止して旧chunkと同じtreeで見つけた削除候補を保持する。同期結果は部分継続したerrorと全体を停止したerrorを区別して記録する。各chunkにはcommit SHA固定のGitHub blob URLを`sourceUrl`に保存する。公開Zenn URLは将来のoptional metadataである。調査時の件数とfront matter確認結果は[調査記録](research/implementation-readiness-2026-08-11.md#統合判断)に残す。
+
+MarkdownはCRLF / CRをLFへ正規化し、空本文を拒否する。chunkはUnicode文字数で最大1,600文字、直前chunkとのoverlapを最大200文字とし、`0 <= overlap < size`を常に満たす。code fence外のATX headingでsectionを分け、headingはmetadataへ保存する。fence内の`#`はheadingとして扱わず、段落とcode fenceは最大長以内なら分割しない。単一blockが最大長を超える場合だけ文字境界で強制分割する。chunk indexは記事ごとに0から始まる連番とする。
 
 画像参照は本文に残すが、MVPではOCR・画像本文indexを行わない。`images/**`の変更はblob SHA比較の対象外なので、再indexを誘発しない。
 
@@ -68,9 +70,30 @@ job storeを持たないため、Agent Workerが必要とする情報はQueue me
 
 | partition | key | 保持する値 |
 |---|---|---|
-| `sync` | `github` | 最終同期成功SHA、最終実行時刻、最終実行結果 |
-| `event` | `{eventId}` | 受信時刻。Slack event再送の重複投入抑止だけに使う |
-| `conversation` | `{threadKeyHash}` | Slack threadごとの直近の`responseId`、更新時刻 |
+| `sync` | `github` | 任意の`lastSuccessfulSha`、`lastRunAt`、`lastRunResult`。結果語彙は`success`、新規不正記事だけを除外した`partial`、既存記事不正・transport/index失敗の`failed`に限定する。`partial`はheadを進め、`failed`は直前のSHAを保持する。初回成功前の失敗ではSHAを持たない |
+| `event` | `{eventId}` | `receivedAt`。Slack event再送の重複投入抑止だけに使う |
+| `conversation` | `{threadKeyHash}` | `responseId`、`updatedAt` |
+
+Queue messageのwire keyはcamelCaseとし、次の形だけを許可する。`eventId`はSlack eventの重複排除キーであると同時に、受信から回答までを検索するcorrelation IDとして使う。別のcorrelation IDを重複して運ばない。`telemetry.tracestate`は任意、それ以外は必須である。未知のfieldを拒否することで、Signing SecretやBot tokenを誤ってQueueへ載せない。
+
+```json
+{
+  "eventId": "...",
+  "teamId": "...",
+  "userId": "...",
+  "channelId": "...",
+  "rootTs": "...",
+  "question": "...",
+  "telemetry": {
+    "traceparent": "...",
+    "tracestate": "..."
+  }
+}
+```
+
+固定resource名はQueue `slack-questions`、Table `state`、Cosmos database `knowledge`、container `chunks`、corpus `default`とする。共有する設定名は`AZURE_STORAGE_ACCOUNT_NAME`、`COSMOS_ENDPOINT`、`FOUNDRY_PROJECT_ENDPOINT`、`EMBEDDING_MODEL_DEPLOYMENT_NAME`、`KNOWLEDGE_AGENT_ENDPOINT`、`GITHUB_OWNER`、`GITHUB_REPOSITORY`、`GITHUB_DEFAULT_BRANCH`、`SLACK_ALLOWED_TEAM_ID`、`SLACK_ALLOWED_USER_ID`、`SLACK_SIGNING_SECRET`、`SLACK_BOT_TOKEN`、`CHUNKING_VERSION`である。
+
+実装上の正確なkey、型、固定値は[`contracts.py`](../src/functions/knowledge_agent/contracts.py)と[`contracts.json`](../src/functions/tests/fixtures/contracts.json)をunit testで照合する。timestampはUTCのISO 8601、Git SHAは40文字の小文字hex、`threadKeyHash`は`${teamId}:${channelId}:${rootTs}`のUTF-8文字列に対するSHA-256小文字hexとする。
 
 Queue Triggerの標準再試行とpoison queueを使い、独自のrelayや24時間再試行は作らない。`host.json`でQueue Triggerの`batchSize`を1にし、同じSlack threadへの連投で`previous_response_id`の読み書きが競合して会話が分岐することを避ける。Agent Workerが最終的に失敗した場合は再送や代替通知を行わず、次回の利用者メッセージで再試行する。
 
@@ -78,20 +101,22 @@ Queue Triggerの標準再試行とpoison queueを使い、独自のrelayや24時
 
 NoSQLの`chunks` containerを一つ作り、partition keyは`/corpusId`、MVP値は`default`に固定する。一corpusを単一logical partitionに置き、cross-partition vector retrievalを避ける。複数corpusまたは20 GB超の見込みが生じた時点で新containerへの移行を判断する。
 
-各chunkは`id = ${articleId}:${chunkIndex}`、`corpusId`、記事・見出し・source metadata、`sourceRevision`、`sourceBlobSha`、`chunkingVersion`、`indexedAt`、`text`、`embedding`を持つ。`sourceBlobSha`と`chunkingVersion`は差分判定のキーである。記事更新は既存articleのchunkを削除して新chunkをupsertし、削除時は該当articleのchunkを削除する。小さい記事は同一logical partitionのtransactional batchで置換し、batch制限を超える記事は複数batchで記事全体を置換する。途中で失敗した場合はcheckpointを持たず、次回Timerが記事単位で再実行する。
+`articleId`はfront matterの`slug`と同じ値にする。各chunkは`id = ${articleId}:${chunkIndex}`、`corpusId`、`articleId`、`chunkIndex`、`slug`、`title`、`emoji`、`articleType`、`topics`、`published`、nullableな`publishedAt`と`heading`、`sourcePath`、`sourceUrl`、`sourceRevision`、`sourceBlobSha`、`chunkingVersion`、`indexedAt`、`text`、`embedding`を持つ。`sourceBlobSha`と`chunkingVersion`は差分判定のキーである。記事更新は新chunkのupsertと余剰旧chunkのdeleteを一つの順序付きoperation列にする。100 operations以下かつSDK overheadを含む保守的な見積りが1.8 MiB以下の小記事は、同一logical partitionの一つのtransactional batchでatomicに置換する。どちらかの上限を超える記事だけを、高い`chunkIndex`からのupsert、残りのupsert、余剰deleteの順で複数batchへ分割する。途中で失敗した場合は全chunk manifestの連番・metadata不整合を次回Timerが検出して記事全体を再実行し、checkpointは持たない。削除時は該当articleのchunkを同じ上限で分割して削除する。
 
 embedding deploymentのmodel、version、SKU、TPMは[プラットフォームと運用](platform-and-operations.md#採用設定)を正とする。vector fieldは`/embedding`、1536次元、`float32`、cosine、`quantizedFlat`とし、`/embedding/*`を通常indexから除外する。vector policy/indexはimmutableであり、MVPで1,000 vector未満のfull scanを許容する。
 
+Cosmosのcosine値はdistanceであり、小さい値ほどqueryに近い。`knowledge_search`はdistance昇順を正とし、同値はCosmosから受け取った順序を保つ。記事のtitleと本文は信頼しないdataとして扱い、tool出力では明示的なuntrusted noticeとJSON文字列境界の内側へ置く。記事本文に含まれる命令、Markdown heading、delimiterをsystem / developer / tool指示へ昇格させない。citationだけは検証済みのcommit SHA固定GitHub URLから末尾の`## Sources` blockを組み立てる。
+
 ## Hosted Agentとidentity/RBAC
 
-Hosted AgentはPython 3.13のAgent Frameworkで`ResponsesHostServer`を起動する。ChatはResponses protocol経路を使い、Agent内部の`FoundryChatClient`は`default_options={"store": false}`とする。会話履歴は外側のResponses protocolへ一元化する。reasoning effortは既定値で始め、回答品質が不足する場合だけ引き上げる。`knowledge_search`は同一processの`@tool`で、`CosmosClient(DefaultAzureCredential())`によりAgent identityで検索する。外部検索endpointは作らない。回答には記事リンクを添える。
+Hosted AgentはPython 3.13のAgent Frameworkで`ResponsesHostServer`を起動する。ChatはResponses protocol経路を使い、Agent内部の`FoundryChatClient`は`default_options={"store": false}`とする。会話履歴は外側のResponses protocolへ一元化する。reasoning effortは既定値で始め、回答品質が不足する場合だけ引き上げる。`knowledge_search`は同一processの`@tool`で、Bicep outputからazd経由で注入した`COSMOS_ENDPOINT`を`CosmosClient(DefaultAzureCredential())`へ渡し、Agent identityで検索する。tool instanceの生涯呼出し上限は置かず、Frameworkのrequest単位`max_function_calls = 3`でrunawayを抑止する。query embeddingはchat設定とは別の`EMBEDDING_MODEL_DEPLOYMENT_NAME`を使う。database `knowledge`とcontainer `chunks`は共有契約の固定値を使う。外部検索endpointは作らない。取得本文はuntrusted dataとして扱い、その中の命令を無視し、検証済みcommit URLだけを引用する。根拠不足時は断定しない。
 
 | principal | 必要な権限 |
 |---|---|
-| Function App MI | Storage Blob Data Owner、Storage Queue Data Contributor、Storage Table Data Contributor、Cosmos DB Built-in Data Contributor、Key Vault Secrets User、Foundry project scopeでembedding呼び出しとAgent呼び出しに必要なdata-plane role |
-| Hosted Agent identity | `chunks` container scopeのCosmos DB Built-in Data Reader、`knowledge_search`のクエリ埋め込みに必要なFoundry embedding data-plane role |
-| Foundry Project MI | Log Analytics Reader |
+| Function App MI | Storage Blob Data Owner、Storage Queue Data Contributor、Storage Table Data Contributor、Cosmos DB Built-in Data Contributor、Key Vault Secrets User、Foundry project scopeのFoundry User、Application Insights scopeのMonitoring Metrics Publisher |
+| Hosted Agent identity | `chunks` container scopeのCosmos DB Built-in Data Reader |
+| Foundry Project MI | Foundry account scopeのFoundry User、Log Analytics workspace scopeのLog Analytics Data Reader、Application Insights scopeのMonitoring Metrics Publisher |
 
-Function App MIに必要なFoundryのdata-plane roleは、Sync Functionのembedding呼び出しとAgent Workerのagent呼び出しの両方に必要である。`knowledge_search`は受け取ったクエリ文字列を埋め込んでからvector queryを実行するため、Hosted Agent identityもCosmosに加えてembeddingを呼べる必要がある。実際のrole名はdeploy時のFoundryのRBACモデルで確認する。
+Function App MIのFoundry Userは、Sync Functionのembedding呼び出しとAgent Workerのagent呼び出しの両方に使う。Hosted Agent identityは同じFoundry projectのendpoint経由で行うmodel inferenceにimplicit accessを持つため、明示的なFoundry roleを追加しない。Foundry Project MIはproject endpointからaccountのmodel deploymentを呼ぶためFoundry Userを使う。role名とscopeの根拠は[実装開始時の現行仕様確認](research/implementation-current-spec-2026-08-11.md#rbac差分)に記録する。
 
 Agent principal IDはdeploy後に得るため、AgentへのCosmos data-plane role assignmentはローカルのpost-deploy scriptで作成する。詳細は[プラットフォームと運用](platform-and-operations.md#デプロイと復旧)を参照する。

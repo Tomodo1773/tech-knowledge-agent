@@ -45,7 +45,7 @@
 - Dependabotは使用中のpackage ecosystemとGitHub Actionsを対象にし、通常更新とsecurity updateを分け、weeklyで確認する。security updateは待機期間で遅延させない。
 - GitHub Actionsは完全長commit SHAへ固定し、参照元versionをcommentで残す。`GITHUB_TOKEN`の権限はworkflowまたはjobごとに最小限にする。
 
-現時点では実行時のpackage ecosystemを持たないため、依存取得に関する設定は未適用とする。依存関係を追加する場合はこの方針に従う。
+FunctionsとHosted Agentは独立したuv projectとしてmanifestとlockfileを管理する。CIの依存同期はSocket Firewall経由に限定し、以後の`uv run`は`--no-sync`、deploy用exportは`--frozen`でlockfile以外から依存を取得しない。Dependabotは両uv projectとGitHub Actionsを対象とする。
 
 ## Validation
 
