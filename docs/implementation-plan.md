@@ -5,11 +5,13 @@
 ## 開始条件
 
 - [プラットフォームと運用の費用方針](platform-and-operations.md#コストと日常運用)に従った実resource作成の許可を得ること
-- 実装開始時にHosted Agentの公式sampleを確認し、`azd`、Foundry extension、Agent Framework、Functions runtime、AVMの採用versionと生成物を確定すること
+- 実装開始時にHosted Agentの公式sampleを確認し、`azd`、Foundry extension、Agent Framework、Functions runtime、AVMについて、事前に決められるversion / 最低constraint、dependency syncで固定するversionの境界、生成物を確定すること
 - `azd provision`直前にFoundryのregion、SKU、model version、TPMのcapacity / quotaと料金を再確認すること
 - Slack App、Key VaultのbootstrapとGitHub同期元の設定に必要な実値を安全に用意できること
 
 変化しやすいCLI option、package version、role名はこの文書へ固定しない。実装開始時の調査結果を各manifest、lockfile、`azure.yaml`、Bicep commentへ反映する。
+
+現行仕様の確認結果は[実装開始時の現行仕様確認](research/implementation-current-spec-2026-08-11.md)に記録した。Step 1ではこの記録から`azure.yaml`、`pyproject.toml`、lockfileへ値を転記し、生成済みsampleをrepositoryへ直接展開しない。
 
 ## 予定ファイル
 
@@ -23,15 +25,16 @@ Function AppとHosted Agentは依存とdeploy単位が異なるため、別のuv
 | `src/functions/function_app.py`、`src/functions/host.json` | Sync、Slack Events、Agent Workerのtrigger登録とFunction App共通設定 |
 | `src/functions/knowledge_agent/contracts.py` | Queue、Table、Cosmos、設定名の共有契約 |
 | `src/functions/knowledge_agent/sync.py`、`github_source.py`、`chunking.py` | GitHub同期と外部接続を持たない変換処理 |
+| `src/functions/knowledge_agent/settings.py`、`http_transport.py`、`azure_adapters.py`、`sync_function.py`、`sync_runtime.py` | 同期設定、匿名GitHub HTTP、Azure SDK adapter、Timer handlerと遅延runtime結線 |
 | `src/functions/knowledge_agent/state.py`、`slack_events.py`、`worker.py`、`telemetry.py` | 状態、Slack受信・応答、Agent呼び出し、観測 |
 | `src/functions/pyproject.toml`、`src/functions/uv.lock` | Function Appの依存とtool設定 |
 | `src/functions/tests/` | Azureへ接続しないFunction Appのunit test |
 | `src/agent/main.py`、`src/agent/knowledge_search.py` | Responses protocolのHosted AgentとCosmos検索tool |
-| `src/agent/pyproject.toml`、`src/agent/uv.lock`、`src/agent/.agentignore` | Hosted Agentの依存、build対象、除外設定 |
+| `src/agent/pyproject.toml`、`src/agent/uv.lock`、`src/agent/.azdignore` | Hosted Agentの依存、build対象、除外設定 |
 | `src/agent/tests/` | query/result整形など外部接続を要しないunit test |
 | `eval/smoke.jsonl` | queryと期待source記事を持つ固定smoke dataset |
 | `scripts/assign-agent-roles.ps1`、`scripts/run-smoke-evaluation.py` | post-deploy RBACとsmoke evaluation |
-| `.github/workflows/ci.yml` | ruff、pytest、Bicep buildなどAzureへログインしないCI |
+| `.github/workflows/ci.yml` | ruff、pytest、package layout、repository policyなどAzureへログインしないCI。Bicep buildはStep 3で追加 |
 | 既存の`.github/workflows/repository-policy.yml`、`scripts/check-repository-policy.ps1` | 指示ファイル同期とrepository policy検証 |
 
 生成した`requirements.txt`、`.azure/`、ローカル設定、deployment outputはcommitしない。testはfront matter検証、chunk分割、blob SHA差分判定、Slack署名・event選別、thread key、payload変換を中心とし、Azure SDKの詳細なmockは作らない。
@@ -82,17 +85,21 @@ flowchart LR
 
 ### 0. 現行仕様の再確認
 
-Hosted Agent / `azd`、Azure IaC / RBAC / capacity、Functions / Slackの3観点を確認し、採用version、scaffold、role、preview差分を確定する。調査はread-onlyなので必要なら並列化できるが、指示役が結果を設計正本へ統合してから次へ進む。
+Hosted Agent / `azd`、Azure IaC / RBAC / capacity、Functions / Slackの3観点を確認し、事前に決められるversion / 最低constraintとlock方針、scaffold、role、preview差分を確定する。調査はread-onlyなので必要なら並列化できるが、指示役が結果を設計正本へ統合してから次へ進む。
 
-**gate:** 予定ファイルと設計文書に未解決の矛盾がなく、実resourceを作らずに固定できるversionがmanifestへ記録できる。
+**状態:** 2026-08-11完了。runtime / protocol、toolの最低version constraint、source-code deploymentの生成形、RBAC名称とscope、Functions / Slack差分、AVM versionを[調査記録](research/implementation-current-spec-2026-08-11.md)と設計正本へ反映した。Python packageの正確な採用versionは依存解決前には断定せず、Step 1のlockfileで固定する。実resource、外部サービス、依存関係は変更していない。
+
+**gate:** 予定ファイルと設計文書に未解決の矛盾がなく、runtime / protocol、toolの最低version constraint、Python packageのlock方針、AVM versionを各manifestとBicepへ転記できる。依存解決後の正確なPython package versionはStep 1のlockfile gateで確認する。
 
 ### 1. 共有契約とproject skeleton
 
 最初にQueue message、Table entity、Cosmos chunk、設定名の契約をtest fixtureで固定する。その後、指示役が`azure.yaml`、共通設定、CI entry pointを作り、FunctionsとHosted Agentのproject skeletonはpathを分けて作成する。
 
+**進捗:** 共有契約とfixtureに加え、`azure.yaml`、Functions v2とHosted Agentのproject skeleton、Python 3.13の`pyproject.toml` / `uv.lock`、CI entry pointを作成した。`sfw`経由の依存同期、ruff、unit test、compile、remote build用`requirements.txt`の生成とpackage root配置は確認済み。Foundry extension、Functions Core Tools、Bicep CLIは未導入のため、それらを使うscaffold / host / Bicep検証は未完了である。
+
 共有契約の確定後であれば、`src/functions/`と`src/agent/`のskeleton作成は並列化できる。trigger登録とlockfileには各一人だけを割り当てる。
 
-**gate:** `sfw`経由のdependency sync、ruff、import / contract unit test、Bicep build、repository policy検証をローカルで再現できる。Azure接続は不要とする。
+**gate:** `sfw`経由のdependency sync、ruff、import / contract unit test、package root検査、repository policy検証をローカルで再現できる。Azure接続は不要とする。Foundry extension / Functions Core Toolsによる検証はtool導入後に追加確認し、IaC未実装のStep 1へ空のBicepを置かないためBicep buildはStep 3 gateだけで扱う。
 
 ### 2. 外部接続を持たないcore実装
 
@@ -102,6 +109,8 @@ Hosted Agent / `azd`、Azure IaC / RBAC / capacity、Functions / Slackの3観点
 2. Slack署名、event選別、重複判定入力、thread key、Queue payload
 3. `knowledge_search`のquery / Cosmos result / citation整形
 
+**状態:** 2026-08-11完了。GitHub API request / response境界、tree・blob・chunking versionの決定的reconcile、strict front matter、Markdown正規化とheading-aware chunk、既存記事不正時のatomic停止、新規記事errorの部分継続、embedding / index portを2Aとして実装した。Slack HMAC、event選別、重複判定用entityとQueue payload、source保持切詰めを2B、query embedding / vector検索port、untrusted JSON境界、distance安定昇順、citation整形とGitHub URL allowlistを2Cとして実装した。すべて外部接続を注入境界の外へ置き、実Azure / GitHub / Slackは変更していない。
+
 契約が固定済みで編集pathが重ならない場合だけlaneを並列化する。各laneは実装とunit testを同じownerが担当する。
 
 **gate:** Azureへ接続しないunit testが通り、境界値と失敗時の扱いが[architecture.md](architecture.md)に一致する。
@@ -110,23 +119,29 @@ Hosted Agent / `azd`、Azure IaC / RBAC / capacity、Functions / Slackの3観点
 
 `infra/app/*.bicep`を実装し、`infra/main.bicep`と`azure.yaml`へ統合する。moduleのinput / outputを先に決めれば各Bicep moduleは並列化できるが、`main.bicep`、parameter、`azure.yaml`のownerは一人に限定する。post-deployでだけ可能なAgent identityのCosmos role assignmentもscript化する。
 
-**gate:** Bicep buildと静的検査が通り、secretや実resource値を出力・commitしない。ここではまだprovisionしない。
+**進捗:** subscription / resource groupと、Functions / Storage、Cosmos、Foundry / model、observability、Key Vault / identityのmodule、post-deployのAgent Cosmos reader assignmentを実装した。model deploymentは`azure.yaml`から`AI_PROJECT_DEPLOYMENTS`で渡し、extensionとBicepの二重定義を避けた。direct source ZIP deploymentに顧客ACRは不要なため構成に含めない。固定AVM tagは公式Git refsで実在を再確認し、telemetry無効化、RBAC、diagnostic settings、secure outputはlocal policy検査で固定済みである。2026-08-12に固定AVM moduleを`mcr.microsoft.com`のpinned tagからlocal cacheへrestoreし、`az bicep build infra/main.bicep`がローカルで成功することを確認した。残る警告はCosmos preview API版のBCP081のみで、errorはない。実resourceは作成していない。
+
+**gate:** 静的検査とローカルBicep buildは完了。CIへBicep build stepを追加する作業が残る。secretや実resource値を出力・commitせず、ここではまだprovisionしない。
 
 ### 4. 同期vertical slice
 
-実resource作成の許可、capacity、料金を再確認してから`azd provision`する。Sync FunctionのAzure adapterを接続し、一記事の取得、chunk、embedding、Cosmos upsert、Table state更新を通す。その後、同じSHAで再embeddingしないことと、更新・削除のreconcileを確認する。
+先に実resourceへ接続しないAzure adapterとmock integration testを実装する。実resource作成の許可、capacity、料金を再確認してから`azd provision`し、一記事の取得、chunk、embedding、Cosmos upsert、Table state更新を通す。その後、同じSHAで再embeddingしないことと、更新・削除のreconcileを確認する。
+
+**進捗:** 2026-08-11に実resourceへ接続しないcode-side sliceを完了した。毎日18:00 UTC（JST 03:00）のTimer、匿名GitHub HTTP、Foundry embedding、Cosmos記事置換、Table sync stateをManaged IdentityのSDK clientへ結線した。clientはDI可能で、GitHubとAzure SDKのtimeout / retryを固定し、secretやendpointをerrorへ含めない。Cosmosは記事の全chunk manifestを検査し、小記事のupsert / stale deleteを単一transactional batchへまとめる。大記事だけを100 operations / 保守的1.8 MiBで分割し、途中状態を`needs_reindex`として次回に記事全体reindexする。`success|partial|failed`のstate遷移、無変更・差分・新規/既存不正・batch境界・途中manifestをmock integration testで確認済みである。Azure SDKの正確なversionはFunctionsの`uv.lock`へ固定した。実Azure / GitHub通信、resource作成、capacity / 料金確認は行っていない。
 
 外部resourceと永続状態を共有するため、このstepは直列で行う。
 
-**gate:** 初回、無変更二回目、更新、削除の4ケースを実環境で追跡できる。
+**gate:** code-sideのunit / mock integration gateは完了。実resource作成の許可、capacity / 料金再確認、AVM restore / Bicep build、provision後に、初回、無変更二回目、更新、削除の4ケースを実環境で追跡するlive gateが残る。
 
 ### 5. Hosted Agent vertical slice
 
-`ResponsesHostServer`と`knowledge_search`を接続し、source-code deploymentでAgent versionを作る。deploy後にAgent identityへ必要なCosmos / embedding権限を付与し、Slackを介さず直接invokeして根拠記事付き回答を確認する。
+`ResponsesHostServer`と`knowledge_search`を接続し、Bicep output由来の`COSMOS_ENDPOINT`と専用`EMBEDDING_MODEL_DEPLOYMENT_NAME`がazd環境からAgentへ注入されることを確認してsource-code deploymentでAgent versionを作る。database `knowledge`とcontainer `chunks`は共有契約の固定値を使う。同一projectのmodel inferenceはAgent identityへimplicitに付与されるため追加roleを作らず、deploy後にbeta.9以降のextensionが出力するAgent principal IDへCosmos Readerだけを付与する。root `postdeploy` hookはrole assignmentを先に完了し、次にFoundry extensionが生成したResponses endpointをFunction Appの`KNOWLEDGE_AGENT_ENDPOINT`へ冪等反映する。空・不正値ではfail closedとなり、値をlogへ出さないことも確認してから、Slackを介さず直接invokeして根拠記事付き回答を確認する。
 
 同期済みdata、Agent version、identityが順に必要なため、このstepは直列で行う。
 
-**gate:** Agent Managed Identityによるquery embeddingとCosmos vector queryが成功し、credentialをcodeやlogへ出さない。
+**進捗:** 2026-08-11に`FoundryChatClient` / `ResponsesHostServer`へ`knowledge_search` toolを結線し、query専用embedding設定、Cosmos vector query、untrusted data境界、citation / 根拠不足時の回答規則、Responses側の会話所有、SDK timeout / retry / lifecycleをmock testで固定した。tool instanceに累積上限を持たせず、lock済みFoundry 1.10.4 / Core 1.13.0の実classでrequest単位`max_function_calls = 3`が保持されることと、5回の独立呼出し後もtoolが利用可能なことを確認した。chat OpenAIを含む全SDK clientをexact-onceで閉じ、構築途中の失敗でも既生成clientを閉じる。beta.9のAgent principal ID outputを使うCosmos Reader assignmentとFunction endpoint設定をroot postdeployへfail-closedな順序で接続し、Azure CLIの両streamと外側hook出力から実値を除去した。実通信・deployは行っていない。2026-08-12に`sfw uv lock`でAgentのdirect依存`azure-cosmos`を`uv.lock`へ固定し、`uv sync --locked`、ruff、unit test、`uv export --frozen`、package layout検査がローカルで通ることを確認した。
+
+**gate:** code-sideのlock / lint / test / export gateは完了。実環境ではAgent Managed Identityによるquery embeddingとCosmos vector queryが成功し、credentialをcodeやlogへ出さないことを確認する作業が残る。
 
 ### 6. Slack end-to-end slice
 
@@ -144,11 +159,8 @@ W3C Trace Context、固定span、content保護、smoke datasetと実行script、
 
 ## 実装時に決める項目
 
-- chunk size / overlapと、batch制限を超える記事を記事単位で再実行する方法
 - Application Insightsの保持期間とsampling
 - 実記事から作るsmoke dataset、baseline後の改善優先度
-- 固定するAVM versionと、必要propertyが未対応の場合のraw Bicep
-- Function App MIとHosted Agent identityに付与するFoundryのdata-plane role名
 - Foundryが`responseId`を保持する期間の実測値と、会話継続の上限7日をそれに収める調整
 
 ## MVP完了条件
