@@ -8,19 +8,22 @@
 |---|---|
 | 主要region | Japan East |
 | capacity不足時の候補 | East US 2 |
-| chat / agent | `gpt-5.6-luna` version `2026-07-09`、GlobalStandard、10K TPM、Responses API、reasoning `max` |
+| chat / agent | `gpt-5.6-luna` version `2026-07-09`、GlobalStandard、10K TPM、Responses API、reasoning effortは既定 |
 | embedding | `text-embedding-3-small` version `1`、GlobalStandard、10K TPM。vector field設定は[architecture.md](architecture.md#cosmos-db検索ストア)を参照 |
-| judge | chatと同じLuna deploymentを共用。smokeではreasoning `max`を必須にしない |
-| Functions | Flex Consumption、always-ready 0 |
-| Cosmos DB | Free Tierをaccount作成時に有効化。`chunks` containerはdedicated provisioned throughput 1,000 RU/s。shared throughput databaseは使わない |
+| Functions | Flex Consumption、always-ready 0、Python 3.13。依存はuvで管理する |
+| Cosmos DB | Free Tierをaccount作成時に有効化。`chunks` containerはdedicated provisioned throughput 1,000 RU/s |
 
 GlobalStandardによる地域外処理を許容する。capacityは予約ではないため、`azd provision`直前に同じregion、SKU、version、TPMを再確認し、利用不可ならEast US 2を検討する。当日の実測snapshotは[調査記録](research/implementation-readiness-2026-08-11.md#t2-regionmodelplan費用)に残す。
 
+Cosmos DBのFree Tierはsubscriptionに一つだけで、account作成時にしか有効化できない。既に他で使用済みの場合はprovisioned 1,000 RU/sが月額目安を大きく超えるため、serverlessへ切り替える。判断は実resource作成前に行う。
+
+Functionsはalways-ready 0で始める。LINE Webhookはコールドスタート時に2秒の応答期限を超えることがあるが、Webhook再送と個人利用の使用頻度を踏まえて許容する。実際に困る場合だけalways-ready instanceの追加を検討する。トップレベルで重い依存をimportしない実装規約は[architecture.md](architecture.md#line質問)を正とする。
+
 ## コストと日常運用
 
-月額の目安は1,000円とし、Azure Budgetに予測・実績通知を設定する。Budgetはhard stopではないため、通知後に利用状況を確認する。Cosmos throughput、model token、Application Insightsの取り込み・保持、Key Vault操作は継続課金になり得る。単価や無料枠は変動するため、実resource作成前に料金を確認する。
+月額の目安は1,000円とし、Azure Budgetに予測・実績通知を設定する。Budgetはhard stopではないため、通知後に利用状況を確認する。Application Insightsにはdaily cap（初期値0.1 GB/日）を設定し、telemetry取り込みの暴走を防ぐ。Cosmos throughput、model token、Application Insightsの取り込み・保持、Key Vault操作は継続課金になり得る。単価や無料枠は変動するため、実resource作成前に料金を確認する。
 
-MVPでは個人利用・dev一環境を前提とする。自動fallbackやrollback機構は作らず、Queue滞留・poison message、Function/Agentエラー、同期停止、予算超過を日常的に確認する。監視項目の詳細は[quality.md](quality.md)を参照する。
+MVPでは個人利用・dev一環境を前提とする。自動fallbackやrollback機構は作らず、Queue滞留・poison message、Function/Agentエラー、同期停止、予算超過を必要に応じて確認する。監視項目の詳細は[quality.md](quality.md)を参照する。
 
 ## IaCと配送
 
@@ -37,9 +40,9 @@ Azure Resource Managerで表せる基盤はBicepを正とし、`azd provision`�
 | `app/observability.bicep` | Log Analytics、Application Insights、Budget / alert |
 | `app/security.bicep` | Key Vaultとidentity |
 
-Agent version、deploy後に判明するAgent principalへのCosmos data-plane role assignment、evaluation dataset / schedule / ruleはBicepの外にある。保護されたCIのpost-deploy stepで実行する。
+Agent version、deploy後に判明するAgent principalへのCosmos data-plane role assignment、evaluation datasetはBicepの外にある。これらはローカルのpost-deploy scriptで実行する。
 
-公開PRではAzureへログインせず、Bicep buildと静的検査だけを行う。実環境のvalidate、what-if、deployは保護されたGitHub Environmentで行い、実resource名、principal ID、endpoint、role assignment、deployment outputを公開ログ・artifact・PR commentへ出さない。
+deployはローカルから`azd`で行い、GitHub ActionsからはAzureへログインしない。CIはBicep build、静的検査、指示ファイル同期の検証だけを行う。protected environmentとOIDC federated credentialはMVPでは構成しない。実resource名、principal ID、endpoint、role assignment、deployment outputは公開ログ・artifact・PR commentへ出さない。
 
 ## Bootstrap
 
@@ -49,11 +52,14 @@ Hosted Agentはsource-code deploymentを使う。`azd ai agent init --deploy-mod
 
 ## デプロイと復旧
 
-`azd deploy`は新しいimmutable Agent versionへendpoint routingを自動設定する。split routingやdraft previewは採用しない。deploy後にdevで一度だけ、Agent起動・Cosmos検索・LINE Pushの疎通を確認する。失敗時はtraceとログから原因を切り分け、修正して再deployする。自動・手動のrollback手順はMVPでは用意せず、必要性はMVP後に判断する。
+`azd deploy`は新しいimmutable Agent versionへendpoint routingを自動設定する。split routingやdraft previewは採用しない。deploy後、Agent principalへの`chunks` container scopeのCosmos data-plane role assignmentをpost-deploy scriptで作成する。
+
+deploy後にdevで一度だけ、Agent起動・Cosmos検索・LINE Pushの疎通を確認する。失敗時はtraceとログから原因を切り分け、修正して再deployする。自動・手動のrollback手順はMVPでは用意せず、必要性はMVP後に判断する。
 
 ## 参考
 
 - [Hosted Agent code deployment](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/deploy-hosted-agent-code)
-- [Reasoning models](https://learn.microsoft.com/azure/foundry/openai/how-to/reasoning)
 - [Responses API](https://learn.microsoft.com/azure/foundry/openai/how-to/responses)
 - [Cosmos DB vector search](https://learn.microsoft.com/azure/cosmos-db/nosql/vector-search)
+- [Flex Consumption plan](https://learn.microsoft.com/azure/azure-functions/flex-consumption-plan)
+- [LINE webhook error statistics](https://developers.line.biz/ja/docs/messaging-api/check-webhook-error-statistics/)

@@ -5,18 +5,18 @@
 ## 開始条件
 
 - [プラットフォームと運用の費用方針](platform-and-operations.md#コストと日常運用)に従った実resource作成の許可を得ること
+- subscriptionのCosmos DB Free Tierが未使用であることを確認すること。使用済みならserverlessへ切り替える
 - deploy直前にFoundryのregion、SKU、version、TPMのcapacity / quotaを再確認すること
 - LINE、Key VaultのbootstrapとGitHub同期元の非機密設定に必要な実値を安全に用意できること
 
 ## 実装順
 
 1. Bicep / `azd`の骨組み、Key Vault、Storage、Cosmos、Foundry、Application Insightsを作る。
-2. TimerによるGitHub SHA確認、Tableの同期state、Storage Queueへの直接投入を実装する。
-3. Indexerで初回同期と変更時の全件reconcile、front matter検証、chunk化、embedding、Cosmos upsertと削除反映を実装する。
-4. Hosted Agentと`knowledge_search`をdeployし、Agent identityへのCosmos reader roleをpost-deployで付与する。
-5. LINE Webhook、Storage Queueへの直接投入、Agent WorkerからのLINE Pushを実装する。
-6. OpenTelemetryの相関と固定datasetのsmoke evaluationを追加する。
-7. protected environmentでdeployし、一度だけ手動の疎通確認を行う。
+2. Timer TriggerのSync Functionで、SHA確認、Trees APIによるblob SHA突き合わせ、front matter検証、chunk化、embedding、Cosmos upsertと削除反映を実装する。
+3. Hosted Agentと`knowledge_search`をdeployし、Agent identityへのCosmos reader roleをpost-deploy scriptで付与する。
+4. LINE Webhook、Storage Queueへの投入、Agent WorkerからのLINE Pushと会話履歴の`previous_response_id`参照を実装する。
+5. OpenTelemetryの相関と固定datasetのsmoke evaluationを追加する。
+6. ローカルから`azd`でdeployし、一度だけ手動の疎通確認を行う。
 
 ## 最小vertical slice
 
@@ -34,15 +34,18 @@
 - Application Insightsの保持期間とsampling
 - 実記事から作るsmoke dataset、baseline後の改善優先度
 - 固定するAVM versionと、必要propertyが未対応の場合のraw Bicep
+- Function App MIに付与するFoundryのdata-plane role名
 
 ## MVP完了条件
 
-- `articles/**/*.md`全件を初期同期でき、default branchの変更と削除が次回Timerで冪等に反映される。
+- `articles/**/*.md`を初期同期でき、default branchの変更と削除が次回Timerで反映される。
+- 変更のない記事が再embeddingされないことを、二回目のTimer実行で確認できる。
 - LINEの1:1質問に、根拠記事へのリンク付きでPush Messageを返せる。
-- LINE job state、Webhook再送、Queue再実行、同一retry keyにより質問の重複処理とPushの重複送信を抑止できる。
+- 直前の質問を踏まえた追い質問に答えられ、24時間後は新しい会話として扱われる。
+- `webhookEventId`の重複チェックにより、Webhook再送で回答が二重に届かない。
 - AgentがManaged IdentityでCosmosを検索し、credentialをコードやログへ出さない。
 - 一件のLINE質問と一件のGitHub同期をtraceで追跡できる。
 - 固定約10件のsmoke evaluationを実行し、結果とtraceを確認できる。
 - `azd provision` / `azd deploy` と、失敗を修正して再deployする手順を再現できる。
 
-production trace評価、continuous evaluation、rollback機構はMVP完了条件に含めない。
+production trace評価、continuous evaluation、rollback機構、コールドスタート対策のalways-ready instanceはMVP完了条件に含めない。
