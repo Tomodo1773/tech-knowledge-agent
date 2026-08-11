@@ -9,7 +9,7 @@ Azure AI関連スタックを学びながら、自分の技術ブログをLINE�
 - LINEの1:1チャットで質問を受け、検索根拠へのリンク付きでPush Messageを返す
 - 処理状況と失敗を追跡できる最低限のトレースと約10件のsmoke evaluationを持つ
 
-画像OCR、複数利用者・高可用性、自動rollback、continuous evaluationはMVPの対象外とする。
+画像OCR、複数利用者・高可用性、rollback機構、continuous evaluationはMVPの対象外とする。
 
 ## 最小構成
 
@@ -35,7 +35,7 @@ flowchart LR
 - AzureはJapan Eastを第一候補にし、FoundryはLuna Max、埋め込みはlargeを使う。
 - 検索対象は`articles/**/*.md`の全記事。`published`の値では除外しない。
 - GitHubの読取りは対象repository限定のGitHub App、Azure内の接続はManaged Identityを使う。
-- 個人MVPなので、deploy後の確認は一度の疎通確認、失敗時の復旧は手動rollbackとする。
+- 個人MVPなので、deploy後の確認は一度の疎通確認に限定し、失敗時は修正して再deployする。
 - コスト方針とAzure Budgetは[プラットフォームと運用](docs/platform-and-operations.md#コストと日常運用)を正とする。
 
 詳細な設計値と運用手順は、READMEへ重複させず下記を正とする。

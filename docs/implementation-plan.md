@@ -43,6 +43,6 @@
 - AgentがManaged IdentityでCosmosを検索し、credentialをコードやログへ出さない。
 - 一件のLINE質問と一件のGitHub同期をtraceで追跡できる。
 - 固定約10件のsmoke evaluationを実行し、結果とtraceを確認できる。
-- `azd provision` / `azd deploy` と手動rollbackの手順を再現できる。
+- `azd provision` / `azd deploy` と、失敗を修正して再deployする手順を再現できる。
 
-production trace評価、continuous evaluation、自動rollbackはMVP完了条件に含めない。
+production trace評価、continuous evaluation、rollback機構はMVP完了条件に含めない。

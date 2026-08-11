@@ -20,7 +20,7 @@ GlobalStandardによる地域外処理を許容する。capacityは予約では�
 
 月額の目安は1,000円とし、Azure Budgetに予測・実績通知を設定する。Budgetはhard stopではないため、通知後に利用状況を確認する。Cosmos throughput、model token、Application Insightsの取り込み・保持、Key Vault操作は継続課金になり得る。単価や無料枠は変動するため、実resource作成前に料金を確認する。
 
-MVPでは個人利用・dev一環境を前提とする。自動fallbackや自動rollbackは作らず、Queue滞留・poison message、Function/Agentエラー、同期停止、予算超過を日常的に確認する。監視項目の詳細は[quality.md](quality.md)を参照する。
+MVPでは個人利用・dev一環境を前提とする。自動fallbackやrollback機構は作らず、Queue滞留・poison message、Function/Agentエラー、同期停止、予算超過を日常的に確認する。監視項目の詳細は[quality.md](quality.md)を参照する。
 
 ## IaCと配送
 
@@ -47,15 +47,9 @@ Agent version、deploy後に判明するAgent principalへのCosmos data-plane r
 
 Hosted Agentはsource-code deploymentを使う。`azd ai agent init --deploy-mode code --runtime python_3_13 --entry-point main.py --dep-resolution remote_build`を起点にし、artifactは`main.py`、tool module、`requirements.txt`、`.agentignore`、`azure.yaml`で構成する。remote buildに問題が出た場合だけbundled packagesを検討する。
 
-## デプロイと手動rollback
+## デプロイと復旧
 
-`azd deploy`は新しいimmutable Agent versionへendpoint routingを自動設定する。split routingやdraft previewは採用しない。deploy後にdevで一度だけ、Agent起動・Cosmos検索・LINE Pushの疎通を確認する。失敗時は保護環境で次を行う。
-
-1. 現在のroutingと直前versionを確認する。
-2. endpoint routingを旧versionへ100%戻す。
-3. Agent起動・Cosmos検索・LINE Pushを一度確認し、結果を非公開の運用記録へ残す。
-
-自動化はMVP後に必要性を判断する。
+`azd deploy`は新しいimmutable Agent versionへendpoint routingを自動設定する。split routingやdraft previewは採用しない。deploy後にdevで一度だけ、Agent起動・Cosmos検索・LINE Pushの疎通を確認する。失敗時はtraceとログから原因を切り分け、修正して再deployする。自動・手動のrollback手順はMVPでは用意せず、必要性はMVP後に判断する。
 
 ## 参考
 
