@@ -34,7 +34,7 @@ jobs:
 
       - name: Check Functions
         run: |
-          uv run --project src/functions --no-sync ruff check src/functions scripts/set_agent_endpoint.py
+          uv run --project src/functions --no-sync ruff check src/functions scripts
           uv run --project src/functions --no-sync pytest src/functions/tests
           uv export --quiet --project src/functions --frozen --no-dev --no-emit-project --output-file src/functions/requirements.txt
           uv run --project src/functions --no-sync python scripts/check-python-package-layout.py src/functions .funcignore function_app.py host.json requirements.txt
@@ -48,6 +48,11 @@ jobs:
           uv run --project src/agent --no-sync pytest src/agent/tests
           uv export --quiet --project src/agent --frozen --no-dev --no-emit-project --output-file src/agent/requirements.txt
           uv run --project src/agent --no-sync python scripts/check-python-package-layout.py src/agent .azdignore main.py requirements.txt
+
+      - name: Build Bicep
+        # Restores the pinned AVM modules from mcr.microsoft.com and type-checks the
+        # templates. No Azure login and no deployment.
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null
 
       - name: Check repository policy
         shell: pwsh

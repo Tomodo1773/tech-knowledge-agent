@@ -6,7 +6,10 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from opentelemetry.trace import SpanKind
+
 from knowledge_search import EMBEDDING_DIMENSIONS, SearchHit
+from telemetry import SPAN_COSMOS_VECTOR_QUERY, set_attributes, traced
 
 COSMOS_DATABASE_NAME = "knowledge"
 COSMOS_CONTAINER_NAME = "chunks"
@@ -64,6 +67,16 @@ class CosmosVectorSearchIndex:
     def search(self, embedding: tuple[float, ...], limit: int) -> tuple[SearchHit, ...]:
         if type(limit) is not int or not 1 <= limit <= 20:
             raise ValueError("limit must be between 1 and 20")
+        with traced(
+            SPAN_COSMOS_VECTOR_QUERY,
+            kind=SpanKind.CLIENT,
+            **{"knowledge.limit": limit},
+        ) as span:
+            results = self._query(embedding, limit)
+            set_attributes(span, **{"knowledge.result_count": len(results)})
+            return results
+
+    def _query(self, embedding: tuple[float, ...], limit: int) -> tuple[SearchHit, ...]:
         query = (
             "SELECT TOP @limit c.title, c.sourceUrl, c.text, "
             "VectorDistance(c.embedding, @embedding) AS distance FROM c "

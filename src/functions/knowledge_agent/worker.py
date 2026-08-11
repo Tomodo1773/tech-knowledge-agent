@@ -8,8 +8,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from opentelemetry.trace import SpanKind
+
 from knowledge_agent.contracts import ConversationStateEntity, QueueMessage, conversation_row_key
 from knowledge_agent.state import ConversationState, is_conversation_continuable
+from knowledge_agent.telemetry import SPAN_AGENT_INVOKE, set_attributes, traced
 
 
 class AgentInvocationError(RuntimeError):
@@ -48,18 +51,24 @@ class HostedAgentClient:
         request: dict[str, Any] = {"input": question}
         if previous_response_id is not None:
             request["previous_response_id"] = previous_response_id
-        try:
-            response = self._client.responses.create(**request)
-        except Exception:
-            raise AgentInvocationError("Hosted Agent request failed") from None
+        with traced(
+            SPAN_AGENT_INVOKE,
+            kind=SpanKind.CLIENT,
+            **{"knowledge.conversation_continued": previous_response_id is not None},
+        ) as span:
+            try:
+                response = self._client.responses.create(**request)
+            except Exception:
+                raise AgentInvocationError("Hosted Agent request failed") from None
 
-        response_id = getattr(response, "id", None)
-        text = getattr(response, "output_text", None)
-        if not isinstance(response_id, str) or not response_id.strip():
-            raise AgentInvocationError("Hosted Agent response has no usable id")
-        if not isinstance(text, str) or not text.strip():
-            raise AgentInvocationError("Hosted Agent response has no usable output")
-        return AgentAnswer(response_id=response_id, text=text)
+            response_id = getattr(response, "id", None)
+            text = getattr(response, "output_text", None)
+            if not isinstance(response_id, str) or not response_id.strip():
+                raise AgentInvocationError("Hosted Agent response has no usable id")
+            if not isinstance(text, str) or not text.strip():
+                raise AgentInvocationError("Hosted Agent response has no usable output")
+            set_attributes(span, **{"knowledge.response_id": response_id})
+            return AgentAnswer(response_id=response_id, text=text)
 
 
 def _utc_timestamp(value: datetime) -> str:

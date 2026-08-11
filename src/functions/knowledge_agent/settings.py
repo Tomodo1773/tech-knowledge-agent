@@ -144,7 +144,7 @@ class AgentEndpoint:
     api_version: str
 
 
-def _agent_endpoint(value: str) -> AgentEndpoint:
+def parse_agent_endpoint(value: str) -> AgentEndpoint:
     try:
         parsed = urlparse(value)
         port = parsed.port
@@ -191,7 +191,7 @@ class WorkerSettings:
             raise SettingsError("SLACK_BOT_TOKEN is invalid")
         return cls(
             storage_account_name=_storage_account(environment),
-            agent_endpoint=_agent_endpoint(
+            agent_endpoint=parse_agent_endpoint(
                 _required(environment, SettingName.KNOWLEDGE_AGENT_ENDPOINT)
             ),
             bot_token=bot_token,

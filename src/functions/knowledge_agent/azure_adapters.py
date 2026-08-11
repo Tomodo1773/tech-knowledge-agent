@@ -13,6 +13,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from opentelemetry.trace import SpanKind
+
 from knowledge_agent.contracts import (
     CORPUS_ID,
     EMBEDDING_DIMENSIONS,
@@ -22,6 +24,7 @@ from knowledge_agent.contracts import (
     SyncStateEntity,
 )
 from knowledge_agent.sync import IndexedArticle
+from knowledge_agent.telemetry import SPAN_COSMOS_UPSERT, SPAN_EMBEDDING_CREATE, traced
 
 _GIT_SHA_LENGTH = 40
 _COSMOS_BATCH_LIMIT = 100
@@ -259,11 +262,24 @@ class CosmosIndexRepository:
         new_ids = {chunk.id for chunk in chunks}
         upserts = [("upsert", (chunk.to_document(),)) for chunk in reversed(chunks)]
         stale_deletes = [("delete", (item_id,)) for item_id in sorted(existing_ids - new_ids)]
-        self._execute_batches((*upserts, *stale_deletes))
+        with traced(
+            SPAN_COSMOS_UPSERT,
+            kind=SpanKind.CLIENT,
+            **{
+                "knowledge.chunk_count": len(upserts),
+                "knowledge.deleted_count": len(stale_deletes),
+            },
+        ):
+            self._execute_batches((*upserts, *stale_deletes))
 
     def delete_article(self, article_id: str) -> None:
         deletes = [("delete", (item_id,)) for item_id in sorted(self._existing_ids(article_id))]
-        self._execute_batches(deletes)
+        with traced(
+            SPAN_COSMOS_UPSERT,
+            kind=SpanKind.CLIENT,
+            **{"knowledge.chunk_count": 0, "knowledge.deleted_count": len(deletes)},
+        ):
+            self._execute_batches(deletes)
 
 
 class FoundryEmbeddingProvider:
@@ -276,6 +292,14 @@ class FoundryEmbeddingProvider:
     def embed(self, texts: tuple[str, ...]) -> tuple[tuple[float, ...], ...]:
         if not texts:
             return ()
+        with traced(
+            SPAN_EMBEDDING_CREATE,
+            kind=SpanKind.CLIENT,
+            **{"knowledge.chunk_count": len(texts)},
+        ):
+            return self._embed(texts)
+
+    def _embed(self, texts: tuple[str, ...]) -> tuple[tuple[float, ...], ...]:
         try:
             response = self._client.embeddings.create(
                 model=self._deployment_name,

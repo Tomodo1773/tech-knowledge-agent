@@ -119,9 +119,9 @@ Hosted Agent / `azd`、Azure IaC / RBAC / capacity、Functions / Slackの3観点
 
 `infra/app/*.bicep`を実装し、`infra/main.bicep`と`azure.yaml`へ統合する。moduleのinput / outputを先に決めれば各Bicep moduleは並列化できるが、`main.bicep`、parameter、`azure.yaml`のownerは一人に限定する。post-deployでだけ可能なAgent identityのCosmos role assignmentもscript化する。
 
-**進捗:** subscription / resource groupと、Functions / Storage、Cosmos、Foundry / model、observability、Key Vault / identityのmodule、post-deployのAgent Cosmos reader assignmentを実装した。model deploymentは`azure.yaml`から`AI_PROJECT_DEPLOYMENTS`で渡し、extensionとBicepの二重定義を避けた。direct source ZIP deploymentに顧客ACRは不要なため構成に含めない。固定AVM tagは公式Git refsで実在を再確認し、telemetry無効化、RBAC、diagnostic settings、secure outputはlocal policy検査で固定済みである。2026-08-12に固定AVM moduleを`mcr.microsoft.com`のpinned tagからlocal cacheへrestoreし、`az bicep build infra/main.bicep`がローカルで成功することを確認した。残る警告はCosmos preview API版のBCP081のみで、errorはない。実resourceは作成していない。
+**進捗:** 2026-08-12にCIへ`az bicep build`を追加し、gateを閉じた。subscription / resource groupと、Functions / Storage、Cosmos、Foundry / model、observability、Key Vault / identityのmodule、post-deployのAgent Cosmos reader assignmentを実装した。model deploymentは`azure.yaml`から`AI_PROJECT_DEPLOYMENTS`で渡し、extensionとBicepの二重定義を避けた。direct source ZIP deploymentに顧客ACRは不要なため構成に含めない。固定AVM tagは公式Git refsで実在を再確認し、telemetry無効化、RBAC、diagnostic settings、secure outputはlocal policy検査で固定済みである。2026-08-12に固定AVM moduleを`mcr.microsoft.com`のpinned tagからlocal cacheへrestoreし、`az bicep build infra/main.bicep`がローカルで成功することを確認した。残る警告はCosmos preview API版のBCP081のみで、errorはない。実resourceは作成していない。
 
-**gate:** 静的検査とローカルBicep buildは完了。CIへBicep build stepを追加する作業が残る。secretや実resource値を出力・commitせず、ここではまだprovisionしない。
+**gate:** 静的検査、ローカルとCIのBicep buildは完了。secretや実resource値を出力・commitせず、ここではまだprovisionしない。
 
 ### 4. 同期vertical slice
 
@@ -159,7 +159,9 @@ Slack Events Function、Queue、Agent Worker、conversation state、`eyes` react
 
 W3C Trace Context、固定span、content保護、smoke datasetと実行script、CIを仕上げる。telemetryとevaluationの実装は編集pathを分けられる場合に並列化できるが、最終trace確認と全validationは指示役が直列で行う。
 
-**gate:** 一件のSlack質問と一件のGitHub同期をtraceで追え、約10件のsmoke evaluationと全ローカルvalidationを再実行できる。
+**進捗:** 2026-08-12に、[quality.md](quality.md#telemetry)のspan表どおりの固定span名、属性のallowlist、Slack HTTPからQueueを越えるW3C Trace Context伝播、Agent側の`knowledge.search` / `cosmos.vector_query`を実装した。Slack一問が一traceに収まることをin-memory exporterのtestで確認している。属性は識別子・件数・結果値だけを許可し、質問文、回答、Signing Secret、Bot token、Authorization headerはcustom spanへ記録できない。Python workerがOTelを直接streamするよう`PYTHON_APPLICATIONINSIGHTS_ENABLE_TELEMETRY`をBicepへ追加し、CIへBicep buildを加えてStep 3の残作業も閉じた。smoke evaluationのschema、citation照合、実行scriptは完成しており、実記事から作る`eval/smoke.jsonl`の中身だけが残る。
+
+**gate:** telemetryとevaluation scriptのcode-side gateは完了。`eval/smoke.jsonl`を実記事から作り、一件のSlack質問と一件のGitHub同期をtraceで追え、約10件のsmoke evaluationを実環境で実行できることを確認するliveゲートが残る。
 
 ## 実装時に決める項目
 

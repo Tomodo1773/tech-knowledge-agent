@@ -9,6 +9,15 @@ from pathlib import PurePosixPath
 from typing import Any, Protocol
 from urllib.parse import quote
 
+from opentelemetry.trace import SpanKind
+
+from knowledge_agent.telemetry import (
+    SPAN_CONTENTS_FETCH,
+    SPAN_TREE_FETCH,
+    set_attributes,
+    traced,
+)
+
 _GIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _REPOSITORY_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 
@@ -94,7 +103,14 @@ class GitHubSourceClient:
             f"https://api.github.com/repos/{self._owner}/{self._repository}"
             f"/git/trees/{revision}?recursive=1"
         )
-        response = self._transport.get_json(url)
+        with traced(SPAN_TREE_FETCH, kind=SpanKind.CLIENT) as span:
+            response = self._transport.get_json(url)
+            entries = self._tree_entries(response)
+            set_attributes(span, **{"knowledge.article_count": len(entries)})
+            return entries
+
+    @staticmethod
+    def _tree_entries(response: Any) -> tuple[GitTreeEntry, ...]:
         if not isinstance(response, Mapping):
             raise GitHubSourceError("GitHub tree response must be an object")
         if response.get("truncated") is not False:
@@ -129,10 +145,11 @@ class GitHubSourceClient:
             f"https://raw.githubusercontent.com/{self._owner}/{self._repository}"
             f"/{revision}/{path}"
         )
-        content = self._transport.get_text(url)
-        if not isinstance(content, str):
-            raise GitHubSourceError("GitHub content response must be text")
-        return content
+        with traced(SPAN_CONTENTS_FETCH, kind=SpanKind.CLIENT):
+            content = self._transport.get_text(url)
+            if not isinstance(content, str):
+                raise GitHubSourceError("GitHub content response must be text")
+            return content
 
     def source_url(self, path: str, revision: str) -> str:
         if not _is_article_path(path):

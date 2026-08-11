@@ -12,12 +12,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from opentelemetry.trace import SpanKind
+
 from knowledge_agent.contracts import (
     CONVERSATION_PARTITION,
     ConversationStateEntity,
     EventStateEntity,
     QueueMessage,
 )
+from knowledge_agent.telemetry import SPAN_QUEUE_PUBLISH, traced
 
 CONVERSATION_MAX_AGE = timedelta(days=7)
 
@@ -107,7 +110,12 @@ class QueueQuestionPublisher:
 
     def publish(self, message: QueueMessage) -> None:
         payload = json.dumps(message.to_dict(), ensure_ascii=False, separators=(",", ":"))
-        try:
-            self._queue.send_message(payload)
-        except Exception:
-            raise StorageAdapterError("Queue publish failed") from None
+        with traced(
+            SPAN_QUEUE_PUBLISH,
+            kind=SpanKind.PRODUCER,
+            **{"knowledge.event_id": message.event_id},
+        ):
+            try:
+                self._queue.send_message(payload)
+            except Exception:
+                raise StorageAdapterError("Queue publish failed") from None

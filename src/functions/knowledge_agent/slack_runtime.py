@@ -12,11 +12,25 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
+from opentelemetry.trace import SpanKind
+
 from knowledge_agent.contracts import SLACK_QUEUE_NAME, STATE_TABLE_NAME, QueueMessage
 from knowledge_agent.http_transport import SlackHttpTransport
 from knowledge_agent.settings import SlackEventsSettings, WorkerSettings
-from knowledge_agent.slack_events import SlackHttpResult, SlackWebClient, handle_slack_request
+from knowledge_agent.slack_events import (
+    SlackHttpResult,
+    SlackWebClient,
+    handle_slack_request,
+    new_trace_context,
+)
 from knowledge_agent.state import QueueQuestionPublisher, TableConversationStore, TableEventStore
+from knowledge_agent.telemetry import (
+    SPAN_SLACK_EVENT_RECEIVE,
+    continued_trace,
+    current_trace_context,
+    set_attributes,
+    traced,
+)
 from knowledge_agent.worker import HostedAgentClient, handle_question
 
 AGENT_TOKEN_SCOPE = "https://ai.azure.com/.default"
@@ -73,16 +87,21 @@ def handle_configured_slack_request(
     signature_header: str | None,
 ) -> SlackHttpResult:
     runtime = build_slack_events_runtime()
-    return handle_slack_request(
-        raw_body=raw_body,
-        timestamp_header=timestamp_header,
-        signature_header=signature_header,
-        signing_secret=runtime.settings.signing_secret,
-        allowed_team_id=runtime.settings.allowed_team_id,
-        allowed_user_id=runtime.settings.allowed_user_id,
-        event_store=runtime.event_store,
-        publisher=runtime.publisher,
-    )
+    with traced(SPAN_SLACK_EVENT_RECEIVE, kind=SpanKind.SERVER) as span:
+        result = handle_slack_request(
+            raw_body=raw_body,
+            timestamp_header=timestamp_header,
+            signature_header=signature_header,
+            signing_secret=runtime.settings.signing_secret,
+            allowed_team_id=runtime.settings.allowed_team_id,
+            allowed_user_id=runtime.settings.allowed_user_id,
+            event_store=runtime.event_store,
+            publisher=runtime.publisher,
+            # The queue message must carry this span's context, not a fresh trace.
+            trace_context=lambda: current_trace_context() or new_trace_context(),
+        )
+        set_attributes(span, **{"knowledge.audit_reason": result.audit_reason})
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,9 +153,11 @@ def build_worker_runtime() -> WorkerRuntime:
 def run_configured_worker(payload: str | bytes) -> None:
     message = QueueMessage.from_dict(json.loads(payload))
     runtime = build_worker_runtime()
-    handle_question(
-        message,
-        agent=runtime.agent,
-        conversations=runtime.conversations,
-        slack=runtime.slack,
-    )
+    # Rejoin the trace the Slack request started so one question is one trace.
+    with continued_trace(message.telemetry):
+        handle_question(
+            message,
+            agent=runtime.agent,
+            conversations=runtime.conversations,
+            slack=runtime.slack,
+        )

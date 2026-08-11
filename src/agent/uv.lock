@@ -1594,6 +1594,7 @@ dependencies = [
     { name = "azure-ai-projects" },
     { name = "azure-cosmos" },
     { name = "azure-identity" },
+    { name = "opentelemetry-api" },
 ]
 
 [package.dev-dependencies]
@@ -1609,6 +1610,7 @@ requires-dist = [
     { name = "azure-ai-projects", specifier = ">=2.3,<3" },
     { name = "azure-cosmos", specifier = ">=4.9,<5" },
     { name = "azure-identity", specifier = ">=1.24.0" },
+    { name = "opentelemetry-api", specifier = ">=1.31.0,<2.0.0" },
 ]
 
 [package.metadata.requires-dev]

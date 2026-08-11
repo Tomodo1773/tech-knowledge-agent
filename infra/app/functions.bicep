@@ -182,6 +182,9 @@ module functionApp 'br/public:avm/res/web/site:0.24.0' = {
           AzureWebJobsStorage__clientId: functionIdentityClientId
           APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsightsConnectionString
           APPLICATIONINSIGHTS_AUTHENTICATION_STRING: 'Authorization=AAD;ClientId=${functionIdentityClientId}'
+          // Lets the Python worker stream OpenTelemetry directly, so host and worker
+          // spans correlate without duplicate host-level entries.
+          PYTHON_APPLICATIONINSIGHTS_ENABLE_TELEMETRY: 'true'
           AZURE_CLIENT_ID: functionIdentityClientId
           AZURE_STORAGE_ACCOUNT_NAME: storageAccountName
           COSMOS_ENDPOINT: cosmosEndpoint

@@ -11,7 +11,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from opentelemetry.trace import SpanKind
+
 from knowledge_agent.contracts import EventStateEntity, QueueMessage, TraceContext
+from knowledge_agent.telemetry import SPAN_SLACK_MESSAGE_SEND, traced
 
 SLACK_SIGNATURE_MAX_AGE_SECONDS = 300
 SLACK_MARKDOWN_LIMIT = 4000
@@ -192,16 +195,22 @@ class SlackWebClient:
         )
 
     def post_thread_reply(self, *, channel_id: str, thread_ts: str, markdown: str) -> None:
-        self._call(
-            "chat.postMessage",
-            {
-                "channel": channel_id,
-                "thread_ts": thread_ts,
-                "markdown_text": truncate_slack_markdown(markdown),
-                "unfurl_links": False,
-                "unfurl_media": False,
-            },
-        )
+        reply = truncate_slack_markdown(markdown)
+        with traced(
+            SPAN_SLACK_MESSAGE_SEND,
+            kind=SpanKind.CLIENT,
+            **{"knowledge.markdown_length": len(reply)},
+        ):
+            self._call(
+                "chat.postMessage",
+                {
+                    "channel": channel_id,
+                    "thread_ts": thread_ts,
+                    "markdown_text": reply,
+                    "unfurl_links": False,
+                    "unfurl_media": False,
+                },
+            )
 
 
 class EventClaimStore(Protocol):
