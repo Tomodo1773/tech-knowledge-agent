@@ -1,0 +1,111 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+requiredVersions:
+  extensions:
+    azure.ai.agents: '>=1.0.0-beta.9'
+
+name: tech-knowledge-agent
+
+hooks:
+  postdeploy:
+    windows:
+      shell: pwsh
+      run: |
+        try {
+          $roleOutput = & ./scripts/assign-agent-roles.ps1 -SubscriptionId $env:AZURE_SUBSCRIPTION_ID -ResourceGroupName $env:AZURE_RESOURCE_GROUP -CosmosAccountName $env:COSMOS_ACCOUNT_NAME -AgentPrincipalId $env:AGENT_KNOWLEDGE_AGENT_INSTANCE_IDENTITY_PRINCIPAL_ID -ErrorAction Stop *>&1
+          $roleExitCode = $LASTEXITCODE
+          $roleOutput = $null
+          if ($roleExitCode -ne 0) { throw 'Role assignment failed.' }
+        } catch {
+          Write-Error 'Hosted Agent Cosmos role assignment failed.'
+          exit 1
+        }
+        uv run --project src/functions --no-sync python scripts/set_agent_endpoint.py
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      interactive: false
+      continueOnError: false
+    posix:
+      shell: sh
+      run: |
+        if ! pwsh -NoProfile -NonInteractive -File scripts/assign-agent-roles.ps1 -SubscriptionId "$AZURE_SUBSCRIPTION_ID" -ResourceGroupName "$AZURE_RESOURCE_GROUP" -CosmosAccountName "$COSMOS_ACCOUNT_NAME" -AgentPrincipalId "$AGENT_KNOWLEDGE_AGENT_INSTANCE_IDENTITY_PRINCIPAL_ID" >/dev/null 2>&1; then
+          echo 'Hosted Agent Cosmos role assignment failed.' >&2
+          exit 1
+        fi
+        uv run --project src/functions --no-sync python scripts/set_agent_endpoint.py
+      interactive: false
+      continueOnError: false
+
+services:
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-5.6-luna
+        model:
+          format: OpenAI
+          name: gpt-5.6-luna
+          version: '2026-07-09'
+        sku:
+          name: GlobalStandard
+          capacity: 10
+      - name: text-embedding-3-small
+        model:
+          format: OpenAI
+          name: text-embedding-3-small
+          version: '1'
+        sku:
+          name: GlobalStandard
+          capacity: 10
+
+  functions:
+    project: ./src/functions
+    language: py
+    host: function
+    hooks:
+      prepackage:
+        windows:
+          shell: pwsh
+          run: uv export --quiet --frozen --no-dev --no-emit-project --output-file requirements.txt
+        posix:
+          shell: sh
+          run: uv export --quiet --frozen --no-dev --no-emit-project --output-file requirements.txt
+
+  knowledge-agent:
+    host: azure.ai.agent
+    project: ./src/agent
+    language: python
+    codeConfiguration:
+      runtime: python_3_13
+      entryPoint: main.py
+    uses:
+      - ai-project
+    kind: hosted
+    name: knowledge-agent
+    description: Answers technical questions from the indexed personal knowledge base.
+    protocols:
+      - protocol: responses
+        version: 2.0.0
+    environmentVariables:
+      - name: AZURE_AI_MODEL_DEPLOYMENT_NAME
+        value: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+      - name: COSMOS_ENDPOINT
+        value: ${COSMOS_ENDPOINT}
+      - name: EMBEDDING_MODEL_DEPLOYMENT_NAME
+        value: ${EMBEDDING_MODEL_DEPLOYMENT_NAME}
+      - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+        value: 'true'
+    container:
+      resources:
+        cpu: '0.5'
+        memory: 1Gi
+    hooks:
+      prepackage:
+        windows:
+          shell: pwsh
+          run: uv export --quiet --frozen --no-dev --no-emit-project --output-file requirements.txt
+        posix:
+          shell: sh
+          run: uv export --quiet --frozen --no-dev --no-emit-project --output-file requirements.txt
+
+infra:
+  provider: bicep
+  path: ./infra

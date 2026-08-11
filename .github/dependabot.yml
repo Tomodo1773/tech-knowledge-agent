@@ -1,5 +1,37 @@
 version: 2
 updates:
+  - package-ecosystem: uv
+    directory: /src/functions
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      functions-version:
+        applies-to: version-updates
+        patterns:
+          - '*'
+      functions-security:
+        applies-to: security-updates
+        patterns:
+          - '*'
+
+  - package-ecosystem: uv
+    directory: /src/agent
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      agent-version:
+        applies-to: version-updates
+        patterns:
+          - '*'
+      agent-security:
+        applies-to: security-updates
+        patterns:
+          - '*'
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

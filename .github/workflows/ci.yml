@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add Socket Firewall
+        uses: SocketDev/action@937f824ec476dfd164d4a4d9995751427b0be143 # v1
+        with:
+          mode: firewall
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: false
+          working-directory: src/functions
+
+      - name: Sync Functions dependencies
+        run: sfw uv sync --project src/functions --locked
+
+      - name: Check Functions
+        run: |
+          uv run --project src/functions --no-sync ruff check src/functions scripts/set_agent_endpoint.py
+          uv run --project src/functions --no-sync pytest src/functions/tests
+          uv export --quiet --project src/functions --frozen --no-dev --no-emit-project --output-file src/functions/requirements.txt
+          uv run --project src/functions --no-sync python scripts/check-python-package-layout.py src/functions .funcignore function_app.py host.json requirements.txt
+
+      - name: Sync Agent dependencies
+        run: sfw uv sync --project src/agent --locked
+
+      - name: Check Agent
+        run: |
+          uv run --project src/agent --no-sync ruff check src/agent
+          uv run --project src/agent --no-sync pytest src/agent/tests
+          uv export --quiet --project src/agent --frozen --no-dev --no-emit-project --output-file src/agent/requirements.txt
+          uv run --project src/agent --no-sync python scripts/check-python-package-layout.py src/agent .azdignore main.py requirements.txt
+
+      - name: Check repository policy
+        shell: pwsh
+        run: |
+          ./scripts/check-repository-policy.ps1
+          ./scripts/check-infra-policy.ps1

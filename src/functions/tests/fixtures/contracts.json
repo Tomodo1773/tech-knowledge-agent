@@ -1,0 +1,90 @@
+{
+  "queueMessage": {
+    "eventId": "EvFixture0001",
+    "teamId": "T_FIXTURE",
+    "userId": "U_FIXTURE",
+    "channelId": "D_FIXTURE",
+    "rootTs": "1720000000.000001",
+    "question": "How does the sync work?",
+    "telemetry": {
+      "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+      "tracestate": "vendor=value"
+    }
+  },
+  "semantics": {
+    "correlationIdField": "eventId"
+  },
+  "tableEntities": {
+    "sync": {
+      "PartitionKey": "sync",
+      "RowKey": "github",
+      "lastSuccessfulSha": "0123456789abcdef0123456789abcdef01234567",
+      "lastRunAt": "2026-08-11T00:00:00Z",
+      "lastRunResult": "success"
+    },
+    "syncInitialFailure": {
+      "PartitionKey": "sync",
+      "RowKey": "github",
+      "lastRunAt": "2026-08-11T00:00:30Z",
+      "lastRunResult": "failed"
+    },
+    "event": {
+      "PartitionKey": "event",
+      "RowKey": "EvFixture0001",
+      "receivedAt": "2026-08-11T00:01:00Z"
+    },
+    "conversation": {
+      "PartitionKey": "conversation",
+      "RowKey": "466b18d1b4db8b9f2f0f4c7c88feb6155fadca2fce58d1b235506017e693691d",
+      "responseId": "resp_fixture_0001",
+      "updatedAt": "2026-08-11T00:02:00Z"
+    }
+  },
+  "cosmosChunk": {
+    "id": "contract-fixture:0",
+    "corpusId": "default",
+    "articleId": "contract-fixture",
+    "chunkIndex": 0,
+    "slug": "contract-fixture",
+    "title": "Contract fixture",
+    "emoji": "test",
+    "articleType": "tech",
+    "topics": ["azure", "testing"],
+    "published": true,
+    "publishedAt": "2026-08-10T00:00:00Z",
+    "heading": "Shared contracts",
+    "sourcePath": "articles/contract-fixture.md",
+    "sourceUrl": "https://github.com/example/example/blob/0123456789abcdef0123456789abcdef01234567/articles/contract-fixture.md",
+    "sourceRevision": "0123456789abcdef0123456789abcdef01234567",
+    "sourceBlobSha": "fedcba9876543210fedcba9876543210fedcba98",
+    "chunkingVersion": "fixture-v1",
+    "indexedAt": "2026-08-11T00:03:00Z",
+    "text": "A deterministic chunk used to fix the storage contract.",
+    "embedding": {
+      "dimensions": 1536,
+      "fill": 0.0
+    }
+  },
+  "settings": [
+    "AZURE_STORAGE_ACCOUNT_NAME",
+    "COSMOS_ENDPOINT",
+    "FOUNDRY_PROJECT_ENDPOINT",
+    "EMBEDDING_MODEL_DEPLOYMENT_NAME",
+    "KNOWLEDGE_AGENT_ENDPOINT",
+    "GITHUB_OWNER",
+    "GITHUB_REPOSITORY",
+    "GITHUB_DEFAULT_BRANCH",
+    "SLACK_ALLOWED_TEAM_ID",
+    "SLACK_ALLOWED_USER_ID",
+    "SLACK_SIGNING_SECRET",
+    "SLACK_BOT_TOKEN",
+    "CHUNKING_VERSION"
+  ],
+  "resourceNames": {
+    "stateTable": "state",
+    "slackQueue": "slack-questions",
+    "cosmosDatabase": "knowledge",
+    "cosmosContainer": "chunks",
+    "corpusId": "default"
+  }
+}

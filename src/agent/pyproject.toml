@@ -1,0 +1,42 @@
+[project]
+name = "tech-knowledge-agent-host"
+version = "0.1.0"
+description = "Microsoft Foundry hosted agent for the technical knowledge base."
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "agent-framework-foundry",
+  "agent-framework-foundry-hosting>=1.0.0a260630",
+  "azure-ai-projects>=2.3,<3",
+  "azure-cosmos>=4.9,<5",
+  "azure-identity>=1.24.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4.0",
+  "ruff>=0.12.0",
+]
+
+[tool.uv]
+constraint-dependencies = [
+  "azure-identity<1.26.0b0",
+  "azure-storage-blob<12.31.0b0",
+  "msal<1.38.0rc0",
+  "protobuf<7.36.0rc0",
+  "pydantic<2.14.0a0",
+  "wrapt<1.17.4rc0",
+]
+package = false
+prerelease = "allow"
+required-version = "==0.11.33"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

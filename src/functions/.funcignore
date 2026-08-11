@@ -1,0 +1,12 @@
+.env
+.env.*
+local.settings.json
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+tests/
+pyproject.toml
+uv.lock
+.python-version

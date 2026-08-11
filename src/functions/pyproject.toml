@@ -1,0 +1,35 @@
+[project]
+name = "tech-knowledge-functions"
+version = "0.1.0"
+description = "Azure Functions for technical knowledge ingestion and Slack orchestration."
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "azure-ai-projects>=2.3.0,<3.0.0",
+  "azure-core>=1.41.0,<2.0.0",
+  "azure-cosmos>=4.9.0,<5.0.0",
+  "azure-data-tables>=12.7.0,<13.0.0",
+  "azure-functions>=1.21.0",
+  "azure-identity>=1.24.0,<1.26.0b0",
+  "pyyaml>=6.0.2,<7.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4.0",
+  "ruff>=0.12.0",
+]
+
+[tool.uv]
+package = false
+required-version = "==0.11.33"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 !.env.sample
+local.settings.json
 *.local.bicepparam
 *.local.parameters.json
 *.pem
@@ -23,6 +24,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .venv/
+src/*/requirements.txt
 
 # Editors and OS
 .vscode/
