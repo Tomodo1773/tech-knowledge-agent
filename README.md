@@ -48,7 +48,7 @@ flowchart LR
 | [platform-and-operations.md](docs/platform-and-operations.md) | Azure採用設定、IaC、bootstrap、deploy・運用の正本 |
 | [quality.md](docs/quality.md) | telemetry、content記録、MVP評価とMVP後の品質施策の正本 |
 | [implementation-plan.md](docs/implementation-plan.md) | 着手条件、実装順、vertical slice、完了条件の正本 |
-| [repository-policy.md](docs/repository-policy.md) | 公開repository、IaC、供給網に関する恒久ポリシー |
+| [repository-policy.md](docs/repository-policy.md) | 個人開発に見合う設計範囲、公開repository、IaC、供給網に関する恒久ポリシー |
 | [research/implementation-readiness-2026-08-11.md](docs/research/implementation-readiness-2026-08-11.md) | 調査時点の根拠・capacity snapshot・統合判断の記録。現行設計の正本ではない |
 
 ## 現在地
