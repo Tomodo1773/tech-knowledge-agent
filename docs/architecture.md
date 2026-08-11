@@ -32,11 +32,11 @@ LINE側のWebhook再送を有効化する。Webhookは2秒以内に2xxを返さ�
 
 ## 会話履歴
 
-Agent Worker FunctionがHosted AgentのResponses endpointに対するクライアントとなる。Hosted Agentは`store: true`で応答を保存し、Workerは呼び出しの戻りにあるresponse idを記録して、次の質問で`previous_response_id`として同じendpointへ渡す。自前で会話履歴を組み立てて毎回送る方式は採らない。
+Agent Worker FunctionがHosted AgentのResponses endpointに対するクライアントとなる。外側のResponses protocolが応答と会話履歴を管理し、Workerは呼び出しの戻りにあるresponse idを記録して、次の質問で`previous_response_id`として同じendpointへ渡す。Agent container内部の`FoundryChatClient`によるmodel callは`store: false`とし、model layerへ会話履歴を重複保存しない。自前で会話履歴を組み立てて毎回送る方式は採らない。
 
 Table Storageに利用者ごとの最新`responseId`と更新時刻だけを持つ。partition keyは`conversation`、row keyはLINEの`source.userId`をSHA-256でハッシュ化した値とし、会話はこのキーで利用者ごとに分かれる。`userId`はchannel単位で安定した高entropyの識別子なのでsaltは持たず、rotationによる会話の消失も起こさない。最終更新から24時間以上経過している場合は参照を捨て、新しい会話として開始する。
 
-`store: true`により質問と回答はFoundry projectに保存される。個人利用のMVPではこれを許容し、[quality.md](quality.md#content記録と保護)のcontent記録方針と同じ扱いとする。
+Hosted AgentのResponses protocolが管理する質問と回答はFoundry側に保存される。個人利用のMVPではこれを許容し、[quality.md](quality.md#content記録と保護)のcontent記録方針と同じ扱いとする。
 
 ## データソース契約
 
@@ -72,7 +72,7 @@ embedding deploymentのmodel、version、SKU、TPMは[プラットフォーム�
 
 ## Hosted Agentとidentity/RBAC
 
-Hosted AgentはPython 3.13のAgent Frameworkで`ResponsesHostServer`を起動する。ChatはResponses API経路を使い、`store: true`とする。reasoning effortは既定値で始め、回答品質が不足する場合だけ引き上げる。`knowledge_search`は同一processの`@tool`で、`CosmosClient(DefaultAzureCredential())`によりAgent identityで検索する。外部検索endpointは作らない。回答には記事リンクを添える。
+Hosted AgentはPython 3.13のAgent Frameworkで`ResponsesHostServer`を起動する。ChatはResponses protocol経路を使い、Agent内部の`FoundryChatClient`は`default_options={"store": false}`とする。会話履歴は外側のResponses protocolへ一元化する。reasoning effortは既定値で始め、回答品質が不足する場合だけ引き上げる。`knowledge_search`は同一processの`@tool`で、`CosmosClient(DefaultAzureCredential())`によりAgent identityで検索する。外部検索endpointは作らない。回答には記事リンクを添える。
 
 | principal | 必要な権限 |
 |---|---|

@@ -33,7 +33,7 @@ flowchart LR
 - AzureはJapan Eastを第一候補にし、FoundryはLuna、埋め込みは`text-embedding-3-small`を使う。
 - 検索対象は`articles/**/*.md`の全記事。`published`の値では除外しない。
 - 差分判定はGit Trees APIのblob SHAで行い、content hashを自前で計算しない。
-- 会話履歴はResponses APIの`store: true`と`previous_response_id`で持つ。
+- 会話履歴はHosted AgentのResponses protocolが管理し、Workerは`previous_response_id`で会話をつなぐ。Agent内部のmodel callは`store: false`とする。
 - 公開GitHub repositoryは認証なしのGitHub APIで読み、Azure内の接続はManaged Identityを使う。
 - 個人MVPなので、deployはローカルの`azd`から行い、deploy後の確認は一度の疎通確認に限定する。
 - コスト方針とAzure Budgetは[プラットフォームと運用](docs/platform-and-operations.md#コストと日常運用)を正とする。

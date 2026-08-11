@@ -19,7 +19,7 @@ span名は固定の低カーディナリティ値にする。検索用にcorrela
 
 ## Content記録と保護
 
-個人利用のMVPでは、`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`によりbuilt-in traceの質問・回答・tool入出力をApplication Insightsへ保存する。これはbuilt-in `gen_ai` telemetryの設定であり、custom spanの属性・引数・戻り値を安全にするものではない。Responses APIの`store: true`により、質問と回答はFoundry projectにも保存される。
+個人利用のMVPでは、`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`によりbuilt-in traceの質問・回答・tool入出力をApplication Insightsへ保存する。これはbuilt-in `gen_ai` telemetryの設定であり、custom spanの属性・引数・戻り値を安全にするものではない。Hosted Agentの外側のResponses protocolが質問・回答と会話履歴をFoundry側で管理する一方、Agent内部のmodel callは`store: false`とし、model layerへ重複保存しない。
 
 LINEのWebhook secret、Authorization header、本文全文をcustom spanへ記録しない。LINE user IDが必要なら[architecture.md](architecture.md#会話履歴)と同じハッシュ化した識別子を使う。閲覧権限は自分のEntra IDと実行に必要なManaged Identityへ限定し、第三者OTLP backendへcontentを送信しない。保持期間とdaily capで保存費用を制御する。
 
