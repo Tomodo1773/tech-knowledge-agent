@@ -10,7 +10,7 @@
 
 ## 後続変更
 
-設計レビュー後、個人MVPに対して過剰だったGitHub App / push Webhook同期とtransactional outbox / relayを廃止した。現行設計はTimerによるcommit SHA確認と全件reconcile、Storage Queueへの直接投入を採用する。embeddingは`text-embedding-3-small`へ変更した。以下は変更前の調査・判断記録として保持する。
+設計レビュー後、個人MVPに対して過剰だったGitHub App / push Webhook同期とtransactional outbox / relayを廃止した。現行設計はTimerによるcommit SHA確認と全件reconcile、Storage Queueへの直接投入を採用する。embeddingは`text-embedding-3-small`へ変更した。その後、非同期回答とLINEの短い`replyToken`期限の不整合を避けるため、利用者インターフェースをSlackのDMとthread返信へ変更した。以下は変更前の調査・判断記録として保持する。
 
 ## T1. Hosted Agent、検索tool、deploy
 
@@ -31,7 +31,7 @@ Cosmos DBはFree Tierをaccount作成時に有効化し、`chunks` containerに�
 
 当日のsnapshotではJapan East / East US 2のchatとembeddingでplatform / quota各1,000K、usage 0を確認した。これは予約ではないため、deploy前に再確認する。
 
-## T3. LINE非同期応答
+## T3. 当初のLINE非同期応答
 
 LINE Webhookは署名検証後、`webhookEventId`を一意キーにdurable job / outboxを保存して2秒以内に2xxを返し、workerがAgentを実行してPush Messageを送る方針とした。`replyToken`は一回限りかつ有効性が短いため、保存・利用しない。Loading APIは1:1のみbest effortとする。
 

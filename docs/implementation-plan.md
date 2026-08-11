@@ -6,7 +6,7 @@
 
 - [プラットフォームと運用の費用方針](platform-and-operations.md#コストと日常運用)に従った実resource作成の許可を得ること
 - deploy直前にFoundryのregion、SKU、version、TPMのcapacity / quotaを再確認すること
-- LINE、Key VaultのbootstrapとGitHub同期元の非機密設定に必要な実値を安全に用意できること
+- Slack App、Key VaultのbootstrapとGitHub同期元の設定に必要な実値を安全に用意できること
 
 ## リポジトリ構成
 
@@ -15,6 +15,7 @@ Function AppとHosted Agentは依存が異なるため、別のPython projectと
 | path | 内容 |
 |---|---|
 | `infra/` | Bicep |
+| `slack/` | secretと実Request URLを含まないSlack App manifest template |
 | `src/functions/` | Function App |
 | `src/agent/` | Hosted Agent |
 | `tests/` | unit test |
@@ -27,7 +28,7 @@ lintとtestはruffとpytestを使う。testの対象はfront matter検証、chun
 1. Bicep / `azd`の骨組み、Key Vault、Storage、Cosmos、Foundry、Application Insightsを作る。
 2. Timer TriggerのSync Functionで、SHA確認、Trees APIによるblob SHA突き合わせ、front matter検証、chunk化、embedding、Cosmos upsertと削除反映を実装する。
 3. Hosted Agentと`knowledge_search`をdeployし、Agent identityへのCosmos reader roleをpost-deploy scriptで付与する。
-4. LINE Webhook、Storage Queueへの投入、Agent WorkerからのLINE Pushと会話履歴の`previous_response_id`参照を実装する。
+4. Slack Events API受信、署名検証、Storage Queueへの投入、Agent WorkerからのSlack thread返信と会話履歴の`previous_response_id`参照を実装する。
 5. OpenTelemetryの相関と固定datasetのsmoke evaluationを追加する。
 6. ローカルから`azd`でdeployし、一度だけ手動の疎通確認を行う。
 
@@ -36,10 +37,10 @@ lintとtestはruffとpytestを使う。testの対象はfront matter検証、chun
 最初のsliceは、次を一件ずつ通すことに限定する。
 
 1. Hosted Agentが起動し、Agent Managed IdentityでCosmos vector queryが成功する。
-2. LINE質問を受信し、Queue経由でAgent回答をPush Messageとして返す。
-3. LINE → Queue → Agent → Cosmosを一つのtraceとして相関できる。
+2. Slack DMの質問を受信し、Queue経由でAgent回答を元メッセージのthreadへ返す。
+3. Slack → Queue → Agent → Cosmosを一つのtraceとして相関できる。
 
-このsliceはroutingの品質gateではない。失敗時はremote build、custom span、LINE送信を切り分けて調査する。
+このsliceはroutingの品質gateではない。失敗時はremote build、custom span、Slack送信を切り分けて調査する。
 
 ## 実装時に決める項目
 
@@ -53,12 +54,12 @@ lintとtestはruffとpytestを使う。testの対象はfront matter検証、chun
 
 - `articles/**/*.md`を初期同期でき、default branchの変更と削除が次回Timerで反映される。
 - 変更のない記事が再embeddingされないことを、二回目のTimer実行で確認できる。
-- LINEの1:1質問に、根拠記事へのリンク付きでPush Messageを返せる。
-- 直前の質問を踏まえた追い質問に答えられ、24時間後は新しい会話として扱われる。
-- `webhookEventId`の重複チェックにより、Webhook再送で回答が二重に届かない。
-- allowlist外の利用者とgroup / roomには回答せず、監査記録だけが残る。
+- 許可した利用者からのSlack DMに、根拠記事へのリンク付きでthread返信できる。
+- 同じSlack threadの直前の質問を踏まえた追い質問に答えられ、トップレベルDMまたは24時間経過後は新しい会話として扱われる。
+- Slack `event_id`の重複チェックにより、event再送で同じQueue messageを二重投入しない。
+- allowlist外のworkspace・利用者とDM以外の会話には回答せず、監査記録だけが残る。
 - AgentがManaged IdentityでCosmosを検索し、credentialをコードやログへ出さない。
-- 一件のLINE質問と一件のGitHub同期をtraceで追跡できる。
+- 一件のSlack質問と一件のGitHub同期をtraceで追跡できる。
 - 固定約10件のsmoke evaluationを実行し、結果とtraceを確認できる。
 - `azd provision` / `azd deploy` と、失敗を修正して再deployする手順を再現できる。
 

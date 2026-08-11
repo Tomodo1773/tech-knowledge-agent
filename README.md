@@ -1,15 +1,15 @@
 # 技術ナレッジ検索エージェント
 
-Azure AI関連スタックを学びながら、自分の技術ブログをLINEから検索・質問できる個人用エージェントを作る。MVPはGitHubで管理するZenn記事を検索対象にし、Azure AI Foundry Hosted Agentで回答する。
+Azure AI関連スタックを学びながら、自分の技術ブログをSlackから検索・質問できる個人用エージェントを作る。MVPはGitHubで管理するZenn記事を検索対象にし、Azure AI Foundry Hosted Agentで回答する。
 
 ## MVPで提供すること
 
 - 公開GitHub repositoryのdefault branchにある`articles/**/*.md`を同期し、ベクトル検索できるようにする
 - Timer Functionが日次でcommit SHAとblob SHAを確認し、変更のあった記事だけを再indexする
-- LINEの1:1チャットで質問を受け、検索根拠へのリンク付きでPush Messageを返す。直前の会話を踏まえた追い質問に答えられる
+- Slack AppとのDMで質問を受け、検索根拠へのリンク付きでスレッド返信する。同じスレッドの直前の会話を踏まえた追い質問に答えられる
 - 処理状況と失敗を追跡できる最低限のトレースと約10件のsmoke evaluationを持つ
 
-画像OCR、複数利用者・高可用性、rollback機構、continuous evaluationはMVPの対象外とする。
+画像OCR、複数利用者・高可用性、Slack Agent機能・Block Kit・streaming、rollback機構、continuous evaluationはMVPの対象外とする。
 
 ## 最小構成
 
@@ -19,13 +19,13 @@ flowchart LR
   SYNC --> E[Foundry embedding]
   SYNC --> C[Cosmos DB: chunks]
   SYNC --> T[Table Storage: state]
-  LINE[LINE] -->|message| LWH[LINE Webhook Function]
-  LWH --> T
-  LWH -->|enqueue| Q[Storage Queue]
+  SLACK[Slack DM] -->|Events API| SWH[Slack Events Function]
+  SWH --> T
+  SWH -->|enqueue| Q[Storage Queue]
   Q --> W[Agent Worker Function]
   W --> A[Foundry Hosted Agent]
   A -->|knowledge_search| C
-  W -->|Push Message| LINE
+  W -->|chat.postMessage| SLACK
 ```
 
 ## 採用と重要な決定
@@ -34,6 +34,7 @@ flowchart LR
 - 検索対象は`articles/**/*.md`の全記事。`published`の値では除外しない。
 - 差分判定はGit Trees APIのblob SHAで行い、content hashを自前で計算しない。
 - 会話履歴はHosted AgentのResponses protocolが管理し、Workerは`previous_response_id`で会話をつなぐ。Agent内部のmodel callは`store: false`とする。
+- Slackは単一workspace・単一利用者・DMだけを対象とし、トップレベルメッセージを会話の起点、スレッド内メッセージを追い質問として扱う。
 - 公開GitHub repositoryは認証なしのGitHub APIで読み、Azure内の接続はManaged Identityを使う。
 - 個人MVPなので、deployはローカルの`azd`から行い、deploy後の確認は一度の疎通確認に限定する。
 - コスト方針とAzure Budgetは[プラットフォームと運用](docs/platform-and-operations.md#コストと日常運用)を正とする。

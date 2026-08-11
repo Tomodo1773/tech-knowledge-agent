@@ -17,7 +17,7 @@ GlobalStandardによる地域外処理を許容する。capacityは予約では�
 
 Cosmos DBのFree Tierは1 accountあたり1,000 RU/sまでを無料にする。`chunks`だけで1,000 RU/sを占有すると、containerを一つ足した時点で課金が始まる。MVPの想定は1,000 vector未満であり400 RU/sで足りるため、無料枠に余裕を残す。
 
-Functionsはalways-ready 0で始める。LINE Webhookはコールドスタート時に2秒の応答期限を超えることがあるが、Webhook再送と個人利用の使用頻度を踏まえて許容する。実際に困る場合だけalways-ready instanceの追加を検討する。トップレベルで重い依存をimportしない実装規約は[architecture.md](architecture.md#line質問)を正とする。
+Functionsはalways-ready 0で始める。Slack Events APIはコールドスタート時に3秒の応答期限を超えることがあるが、最大3回のevent再送と個人利用の使用頻度を踏まえて許容する。実際に困る場合だけalways-ready instanceの追加を検討する。トップレベルで重い依存をimportしない実装規約は[architecture.md](architecture.md#slack質問)を正とする。
 
 ## コストと日常運用
 
@@ -46,7 +46,7 @@ deployはローカルから`azd`で行い、GitHub ActionsからはAzureへロ�
 
 ## Bootstrap
 
-初回bootstrapで、LINE channel設定、Webhook再送の有効化、Key Vaultへのsecret登録を行う。公開GitHub repositoryのowner、repository、default branch、および応答を許可するLINE `userId`のallowlistはdeploy時の非機密設定として与える。実値を文書やログへ残さず、Bicepにはsecret名と参照だけを置く。
+初回bootstrapで、Slack Appをmanifest templateから自分のworkspaceへ作成・installし、App HomeのMessages tab、Bot Token Scopeの`im:history`と`chat:write`、`message.im` event subscriptionを設定する。Function endpointの作成後にEvents API Request URLを登録し、Slack Signing SecretとBot tokenをKey Vaultへ保存する。公開GitHub repositoryのowner、repository、default branch、および応答を許可するSlack `team_id`と`user`のallowlistはdeploy時の設定として与える。実値を文書やログへ残さず、Bicepにはsecret名と参照だけを置く。複数workspace向けOAuth、Slack Marketplace公開、Slack Agent機能は構成しない。
 
 Hosted Agentはsource-code deploymentを使う。`requirements.txt`の生成方法は[ローカル開発](#ローカル開発)を正とする。`azd ai agent init --deploy-mode code --runtime python_3_13 --entry-point main.py --dep-resolution remote_build`を起点にし、artifactは`main.py`、tool module、`requirements.txt`、`.agentignore`、`azure.yaml`で構成する。remote buildに問題が出た場合だけbundled packagesを検討する。
 
@@ -54,7 +54,7 @@ Hosted Agentはsource-code deploymentを使う。`requirements.txt`の生成方�
 
 Functionsはローカルで実行し、Cosmos、Storage、Foundryは実resourceへ接続する。emulatorは使わない。個人利用の想定使用量ではFree Tierと低い従量課金の範囲に収まり、環境差分を持ち込まない方が単純である。
 
-LINE Webhookのローカル受信には既存のCloudflare Tunnelを使う。Sync Functionを任意のタイミングで動かす場合はFunctionsのadmin API（`POST /admin/functions/{name}`）を使い、そのための手動同期用HTTP endpointをアプリへ追加しない。
+Slack eventのローカル受信には既存のCloudflare Tunnelを使い、開発中だけSlack AppのEvents API Request URLをTunnelへ向ける。Sync Functionを任意のタイミングで動かす場合はFunctionsのadmin API（`POST /admin/functions/{name}`）を使い、そのための手動同期用HTTP endpointをアプリへ追加しない。
 
 依存はuvで管理し、FunctionsとHosted Agentが必要とする`requirements.txt`は`azd`のprepackage hookで`uv export`により生成する。生成した`requirements.txt`はcommitせず、lockfileを正とする。
 
@@ -62,7 +62,7 @@ LINE Webhookのローカル受信には既存のCloudflare Tunnelを使う。Syn
 
 `azd deploy`は新しいimmutable Agent versionへendpoint routingを自動設定する。split routingやdraft previewは採用しない。deploy後、Agent principalへの`chunks` container scopeのCosmos data-plane role assignmentをpost-deploy scriptで作成する。
 
-deploy後にdevで一度だけ、Agent起動・Cosmos検索・LINE Pushの疎通を確認する。失敗時はtraceとログから原因を切り分け、修正して再deployする。自動・手動のrollback手順はMVPでは用意せず、必要性はMVP後に判断する。
+deploy後にdevで一度だけ、Agent起動・Cosmos検索・Slack DMのスレッド返信を確認する。失敗時はtraceとログから原因を切り分け、修正して再deployする。自動・手動のrollback手順はMVPでは用意せず、必要性はMVP後に判断する。
 
 ## 参考
 
@@ -70,4 +70,8 @@ deploy後にdevで一度だけ、Agent起動・Cosmos検索・LINE Pushの疎通
 - [Responses API](https://learn.microsoft.com/azure/foundry/openai/how-to/responses)
 - [Cosmos DB vector search](https://learn.microsoft.com/azure/cosmos-db/nosql/vector-search)
 - [Flex Consumption plan](https://learn.microsoft.com/azure/azure-functions/flex-consumption-plan)
-- [LINE webhook error statistics](https://developers.line.biz/ja/docs/messaging-api/check-webhook-error-statistics/)
+- [Slack Events API](https://docs.slack.dev/apis/events-api/)
+- [Verifying requests from Slack](https://docs.slack.dev/authentication/verifying-requests-from-slack)
+- [Slack App manifests](https://docs.slack.dev/app-manifests/)
+- [message.im event](https://docs.slack.dev/reference/events/message.im)
+- [chat.postMessage](https://docs.slack.dev/reference/methods/chat.postMessage/)

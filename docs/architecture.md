@@ -4,7 +4,7 @@
 
 ## 境界とフロー
 
-Sync Function（Timer Trigger）、LINE Webhook Function（HTTP Trigger）、Agent Worker Function（Queue Trigger）の3関数は、単一のFunction Appにまとめる。Bicep module、deploy、Managed Identityも1つに統一し、複数Function Appへの分割は行わない。この結果、Function App MIはSyncのCosmos書き込み・embedding呼び出しからWebhookのQueue書き込みまでを合わせ持つ。個人利用のMVPでは、least privilegeのための分割よりも構成の単純さを優先する。
+Sync Function（Timer Trigger）、Slack Events Function（HTTP Trigger）、Agent Worker Function（Queue Trigger）の3関数は、単一のFunction Appにまとめる。Bicep module、deploy、Managed Identityも1つに統一し、複数Function Appへの分割は行わない。この結果、Function App MIはSyncのCosmos書き込み・embedding呼び出しからSlack eventのQueue書き込みまでを合わせ持つ。個人利用のMVPでは、least privilegeのための分割よりも構成の単純さを優先する。
 
 ### GitHub同期
 
@@ -18,23 +18,24 @@ Sync FunctionはTimer Triggerで日次起動し、同期を一つの実行で完
 
 blob SHAはGitが内容から決める識別子なので、自前のcontent hashは計算しない。この突き合わせはforce push、初回実行、前回実行の途中失敗のいずれでも同じ手順で収束するため、checkpointや部分再開を持たない。失敗した実行は次回Timerがやり直す。手動同期はMVPの必須機能にせず、Timerの再実行で復旧する。
 
-### LINE質問
+### Slack質問
 
-1. LINE Webhook Functionは署名を検証し、許可した利用者からの1:1メッセージであることを確認したうえで、`event` tableへ`webhookEventId`をInsert Entityで書き込む。409が返ればWebhook再送とみなし、何も投入せず2xxを返す。Insertが成功した場合だけStorage Queueへ投入して2xxを返す。read-then-writeは使わず、Insertの成否そのものを排他とする。Insert成功後にQueue投入が失敗したeventは再送でも復旧しないが、利用者が質問し直せば足りるため補償処理は持たない。
-2. Agent Worker FunctionがHosted Agentを呼び、Agentの`knowledge_search` toolがCosmosを検索する。
-3. Agent Worker FunctionがPush Messageで回答を送る。回答はplain textとし、Markdown記法を展開せずに整形する。根拠記事のURLは本文末尾へ列挙し、1通5,000文字の上限を超える場合は末尾を切り詰める。
+1. Slack Events Functionはraw request body、`X-Slack-Request-Timestamp`、`X-Slack-Signature`を使って署名と5分以内のtimestampを検証する。Events APIの`url_verification`はQueueへ入れず、その場でchallengeを返す。
+2. `event_callback`では、許可したworkspaceと利用者からの`message.im`であり、`subtype`と`bot_id`を持たない通常のテキストメッセージであることを確認する。外側の`event_id`を`event` tableへInsert Entityで書き込み、409なら再送とみなして何も投入せず2xxを返す。Insert成功時だけStorage Queueへ投入して2xxを返す。read-then-writeは使わず、Insertの成否そのものを排他とする。Insert成功後にQueue投入が失敗したeventは再送でも復旧しないが、利用者が質問し直せば足りるため補償処理は持たない。
+3. Agent Worker FunctionがHosted Agentを呼び、Agentの`knowledge_search` toolがCosmosを検索する。
+4. Agent Worker FunctionがSlack Web APIの`chat.postMessage`で、元メッセージを親とするスレッドへ回答する。`rootTs`は`event.thread_ts`があればその値、なければ`event.ts`とする。回答ではSlackの`mrkdwn`を使えるものの複雑なBlock Kitは採用しない。回答は根拠記事のURLを末尾に残したまま4,000文字以内へ整形し、`unfurl_links`と`unfurl_media`は`false`にする。
 
-LINE側のWebhook再送を有効化する。Webhookは2秒以内に2xxを返さないと`request_timeout`になるが、Flex ConsumptionのPython Functionはコールドスタートでこれを超えることがある。再送は回数も間隔も非公開で確実な配信を保証しないため、これは可用性の担保ではなく、個人利用で許容できる範囲の再試行手段として使う。always-ready instanceはコストに見合わないためMVPでは設定せず、実際に困った場合に追加する。
+Slack Events APIは3秒以内に2xxを返せない場合、ほぼ即時、1分後、5分後に最大3回再送する。Flex ConsumptionのPython Functionはコールドスタートで3秒を超えることがあるが、最初の要求でFunction Appが起動すれば後続の再送を処理できる可能性が高い。`event_id`のInsertにより再送を重複投入させない。これは確実な配信保証ではないため、always-ready instanceはMVPでは設定せず、実際に困った場合だけ追加する。
 
-コールドスタートを短くするため、Function Appのトップレベルでは重い依存をimportしない。Cosmos、Foundry、Agent関連のSDKは各ハンドラの内部でimportし、Webhook受信の経路が他機能の依存を読み込まないようにする。
+コールドスタートを短くするため、Function Appのトップレベルでは重い依存をimportしない。Cosmos、Foundry、Agent関連のSDKは各ハンドラの内部でimportし、Slack event受信の経路が他機能の依存を読み込まないようにする。
 
-対象は許可した利用者との1:1チャットだけとする。応答する`userId`はallowlistで限定し、allowlist外の利用者は`unauthorized_user`、group / roomは`unsupported_source_type`の監査記録だけを残して2xxを返し、Queueへ投入しない。LINE公式アカウントはIDを知る第三者からもメッセージを受け取れるため、これはmodel token、Pushの無料通数、Foundryへ保存されるcontentを想定外の相手で消費しないための制限でもある。allowlistの`userId`はdeploy時の非機密設定として与え、実値をこの文書やrepositoryへ記録しない。多人数へ広げる場合はallowlistを外すだけでよく、`conversation`のキー設計は変えない。`replyToken`は非同期最終返信に保存・使用しない。Loading APIは1:1でbest effortとし、失敗しても処理を継続する。
+対象は単一workspaceで許可した利用者とのDMだけとする。`team_id`と`user`をallowlistで限定し、allowlist外は`unauthorized_source`、DM以外は`unsupported_conversation_type`の監査記録だけを残して2xxを返し、Queueへ投入しない。これはmodel tokenとFoundryへ保存されるcontentを想定外の相手に消費させないための制限でもある。allowlist値はdeploy時の設定として与え、実値を文書、repository、ログへ記録しない。Slack Appは自分のworkspaceへ手動installし、複数workspace向けOAuth install flowは持たない。
 
 ## 会話履歴
 
 Agent Worker FunctionがHosted AgentのResponses endpointに対するクライアントとなる。外側のResponses protocolが応答と会話履歴を管理し、Workerは呼び出しの戻りにあるresponse idを記録して、次の質問で`previous_response_id`として同じendpointへ渡す。Agent container内部の`FoundryChatClient`によるmodel callは`store: false`とし、model layerへ会話履歴を重複保存しない。自前で会話履歴を組み立てて毎回送る方式は採らない。
 
-Table Storageに利用者ごとの最新`responseId`と更新時刻だけを持つ。partition keyは`conversation`、row keyはLINEの`source.userId`をSHA-256でハッシュ化した値とし、会話はこのキーで利用者ごとに分かれる。`userId`はchannel単位で安定した高entropyの識別子なのでsaltは持たず、rotationによる会話の消失も起こさない。最終更新から24時間以上経過している場合は参照を捨て、新しい会話として開始する。
+Table StorageにSlack threadごとの最新`responseId`と更新時刻だけを持つ。partition keyは`conversation`、row keyは`${teamId}:${channelId}:${rootTs}`をSHA-256でハッシュ化した値とする。トップレベルのDMは新しい会話を始め、同じ`rootTs`を持つスレッド内のメッセージだけが会話を継続する。最終更新から24時間以上経過している場合は参照を捨て、同じSlack thread内でも新しい会話として開始する。
 
 Hosted AgentのResponses protocolが管理する質問と回答はFoundry側に保存される。個人利用のMVPではこれを許容し、[quality.md](quality.md#content記録と保護)のcontent記録方針と同じ扱いとする。
 
@@ -52,15 +53,15 @@ Hosted AgentのResponses protocolが管理する質問と回答はFoundry側に�
 
 Storage Queueと同じStorage AccountのTable Storageに`state` tableを一つ置き、次の3種類だけを保持する。outbox、relay、job status machineは作らない。
 
-job storeを持たないため、Agent Workerが必要とする情報はQueue messageが運ぶ。messageは`webhookEventId`、LINEの`userId`、質問文、telemetry metadataを持ち、credentialと`replyToken`は置かない。`userId`は宛先としてPush Messageに必要なので、ハッシュではなく生の値を運ぶ。Queueは同じStorage Account内にあり、Managed Identityでのみ読み書きされ、保存時に暗号化される。
+job storeを持たないため、Agent Workerが必要とする情報はQueue messageが運ぶ。messageはSlackの`eventId`、`teamId`、`userId`、`channelId`、`rootTs`、質問文、telemetry metadataを持ち、Signing SecretとBot tokenは置かない。Slack IDとtimestampは送信先と会話識別に必要なので生の値を運ぶ。Queueは同じStorage Account内にあり、Managed Identityでのみ読み書きされ、保存時に暗号化される。
 
 | partition | key | 保持する値 |
 |---|---|---|
 | `sync` | `github` | 最終同期成功SHA、最終実行時刻、最終実行結果 |
-| `event` | `{webhookEventId}` | 受信時刻。重複投入の抑止だけに使う |
-| `conversation` | `{userIdHash}` | 直近の`responseId`、更新時刻 |
+| `event` | `{eventId}` | 受信時刻。Slack event再送の重複投入抑止だけに使う |
+| `conversation` | `{threadKeyHash}` | Slack threadごとの直近の`responseId`、更新時刻 |
 
-Queue Triggerの標準再試行とpoison queueを使い、独自のrelayや24時間再試行は作らない。`host.json`でQueue Triggerの`batchSize`を1にし、同一利用者の連投で`previous_response_id`の読み書きが競合して会話が分岐することを避ける。Agent Workerが最終的に失敗した場合は再送や代替通知を行わず、次回の利用者メッセージで再試行する。
+Queue Triggerの標準再試行とpoison queueを使い、独自のrelayや24時間再試行は作らない。`host.json`でQueue Triggerの`batchSize`を1にし、同じSlack threadへの連投で`previous_response_id`の読み書きが競合して会話が分岐することを避ける。Agent Workerが最終的に失敗した場合は再送や代替通知を行わず、次回の利用者メッセージで再試行する。
 
 ## Cosmos DB検索ストア
 
