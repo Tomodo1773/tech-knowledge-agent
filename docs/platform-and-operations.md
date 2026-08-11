@@ -11,9 +11,11 @@
 | chat / agent | `gpt-5.6-luna` version `2026-07-09`、GlobalStandard、10K TPM、Responses API、reasoning effortは既定 |
 | embedding | `text-embedding-3-small` version `1`、GlobalStandard、10K TPM。vector field設定は[architecture.md](architecture.md#cosmos-db検索ストア)を参照 |
 | Functions | Flex Consumption、always-ready 0、Python 3.13。依存はuvで管理する |
-| Cosmos DB | Free Tierをaccount作成時に有効化。`chunks` containerはdedicated provisioned throughput 1,000 RU/s |
+| Cosmos DB | Free Tierをaccount作成時に有効化。`chunks` containerはdedicated provisioned throughput 400 RU/s。local authを無効化し、data-plane RBACだけで接続する |
 
 GlobalStandardによる地域外処理を許容する。capacityは予約ではないため、`azd provision`直前に同じregion、SKU、version、TPMを再確認し、利用不可ならEast US 2を検討する。当日の実測snapshotは[調査記録](research/implementation-readiness-2026-08-11.md#t2-regionmodelplan費用)に残す。
+
+Cosmos DBのFree Tierは1 accountあたり1,000 RU/sまでを無料にする。`chunks`だけで1,000 RU/sを占有すると、containerを一つ足した時点で課金が始まる。MVPの想定は1,000 vector未満であり400 RU/sで足りるため、無料枠に余裕を残す。
 
 Functionsはalways-ready 0で始める。LINE Webhookはコールドスタート時に2秒の応答期限を超えることがあるが、Webhook再送と個人利用の使用頻度を踏まえて許容する。実際に困る場合だけalways-ready instanceの追加を検討する。トップレベルで重い依存をimportしない実装規約は[architecture.md](architecture.md#line質問)を正とする。
 
@@ -44,9 +46,17 @@ deployはローカルから`azd`で行い、GitHub ActionsからはAzureへロ�
 
 ## Bootstrap
 
-初回bootstrapで、LINE channel設定、Webhook再送の有効化、Key Vaultへのsecret登録を行う。公開GitHub repositoryのowner、repository、default branchはdeploy時の非機密設定として与える。実値を文書やログへ残さず、Bicepにはsecret名と参照だけを置く。
+初回bootstrapで、LINE channel設定、Webhook再送の有効化、Key Vaultへのsecret登録を行う。公開GitHub repositoryのowner、repository、default branch、および応答を許可するLINE `userId`のallowlistはdeploy時の非機密設定として与える。実値を文書やログへ残さず、Bicepにはsecret名と参照だけを置く。
 
-Hosted Agentはsource-code deploymentを使う。`azd ai agent init --deploy-mode code --runtime python_3_13 --entry-point main.py --dep-resolution remote_build`を起点にし、artifactは`main.py`、tool module、`requirements.txt`、`.agentignore`、`azure.yaml`で構成する。remote buildに問題が出た場合だけbundled packagesを検討する。
+Hosted Agentはsource-code deploymentを使う。`requirements.txt`の生成方法は[ローカル開発](#ローカル開発)を正とする。`azd ai agent init --deploy-mode code --runtime python_3_13 --entry-point main.py --dep-resolution remote_build`を起点にし、artifactは`main.py`、tool module、`requirements.txt`、`.agentignore`、`azure.yaml`で構成する。remote buildに問題が出た場合だけbundled packagesを検討する。
+
+## ローカル開発
+
+Functionsはローカルで実行し、Cosmos、Storage、Foundryは実resourceへ接続する。emulatorは使わない。個人利用の想定使用量ではFree Tierと低い従量課金の範囲に収まり、環境差分を持ち込まない方が単純である。
+
+LINE Webhookのローカル受信には既存のCloudflare Tunnelを使う。Sync Functionを任意のタイミングで動かす場合はFunctionsのadmin API（`POST /admin/functions/{name}`）を使い、そのための手動同期用HTTP endpointをアプリへ追加しない。
+
+依存はuvで管理し、FunctionsとHosted Agentが必要とする`requirements.txt`は`azd`のprepackage hookで`uv export`により生成する。生成した`requirements.txt`はcommitせず、lockfileを正とする。
 
 ## デプロイと復旧
 

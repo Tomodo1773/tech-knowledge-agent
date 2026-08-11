@@ -20,21 +20,21 @@ blob SHAはGitが内容から決める識別子なので、自前のcontent hash
 
 ### LINE質問
 
-1. LINE Webhook Functionは署名を検証し、`webhookEventId`が処理済みでなければStorage Queueへ投入して2xxを返す。処理済みなら何も投入せず2xxを返す。
+1. LINE Webhook Functionは署名を検証し、許可した利用者からの1:1メッセージであることを確認したうえで、`event` tableへ`webhookEventId`をInsert Entityで書き込む。409が返ればWebhook再送とみなし、何も投入せず2xxを返す。Insertが成功した場合だけStorage Queueへ投入して2xxを返す。read-then-writeは使わず、Insertの成否そのものを排他とする。Insert成功後にQueue投入が失敗したeventは再送でも復旧しないが、利用者が質問し直せば足りるため補償処理は持たない。
 2. Agent Worker FunctionがHosted Agentを呼び、Agentの`knowledge_search` toolがCosmosを検索する。
-3. Agent Worker FunctionがPush Messageで回答を送る。
+3. Agent Worker FunctionがPush Messageで回答を送る。回答はplain textとし、Markdown記法を展開せずに整形する。根拠記事のURLは本文末尾へ列挙し、1通5,000文字の上限を超える場合は末尾を切り詰める。
 
 LINE側のWebhook再送を有効化する。Webhookは2秒以内に2xxを返さないと`request_timeout`になるが、Flex ConsumptionのPython Functionはコールドスタートでこれを超えることがある。再送は回数も間隔も非公開で確実な配信を保証しないため、これは可用性の担保ではなく、個人利用で許容できる範囲の再試行手段として使う。always-ready instanceはコストに見合わないためMVPでは設定せず、実際に困った場合に追加する。
 
 コールドスタートを短くするため、Function Appのトップレベルでは重い依存をimportしない。Cosmos、Foundry、Agent関連のSDKは各ハンドラの内部でimportし、Webhook受信の経路が他機能の依存を読み込まないようにする。
 
-対象は1:1チャットだけとする。group / roomは署名検証後に2xxを返し、`unsupported_source_type`の監査記録だけを残す。`replyToken`は非同期最終返信に保存・使用しない。Loading APIは1:1でbest effortとし、失敗しても処理を継続する。
+対象は許可した利用者との1:1チャットだけとする。応答する`userId`はallowlistで限定し、allowlist外の利用者は`unauthorized_user`、group / roomは`unsupported_source_type`の監査記録だけを残して2xxを返し、Queueへ投入しない。LINE公式アカウントはIDを知る第三者からもメッセージを受け取れるため、これはmodel token、Pushの無料通数、Foundryへ保存されるcontentを想定外の相手で消費しないための制限でもある。allowlistの`userId`はdeploy時の非機密設定として与え、実値をこの文書やrepositoryへ記録しない。多人数へ広げる場合はallowlistを外すだけでよく、`conversation`のキー設計は変えない。`replyToken`は非同期最終返信に保存・使用しない。Loading APIは1:1でbest effortとし、失敗しても処理を継続する。
 
 ## 会話履歴
 
-Responses APIの`store: true`を使い、会話の継続はFoundry側に保存されたresponseへの`previous_response_id`参照で行う。自前で会話履歴を組み立てて毎回送る方式は採らない。
+Agent Worker FunctionがHosted AgentのResponses endpointに対するクライアントとなる。Hosted Agentは`store: true`で応答を保存し、Workerは呼び出しの戻りにあるresponse idを記録して、次の質問で`previous_response_id`として同じendpointへ渡す。自前で会話履歴を組み立てて毎回送る方式は採らない。
 
-Table Storageに利用者ごとの最新`responseId`と更新時刻だけを持つ。最終更新から24時間以上経過している場合は参照を捨て、新しい会話として開始する。利用者識別子はハッシュ化して保存する。
+Table Storageに利用者ごとの最新`responseId`と更新時刻だけを持つ。partition keyは`conversation`、row keyはLINEの`source.userId`をSHA-256でハッシュ化した値とし、会話はこのキーで利用者ごとに分かれる。`userId`はchannel単位で安定した高entropyの識別子なのでsaltは持たず、rotationによる会話の消失も起こさない。最終更新から24時間以上経過している場合は参照を捨て、新しい会話として開始する。
 
 `store: true`により質問と回答はFoundry projectに保存される。個人利用のMVPではこれを許容し、[quality.md](quality.md#content記録と保護)のcontent記録方針と同じ扱いとする。
 
@@ -50,7 +50,9 @@ Table Storageに利用者ごとの最新`responseId`と更新時刻だけを持�
 
 ## 状態とメッセージ契約
 
-Storage Queueと同じStorage AccountのTable Storageに`state` tableを一つ置き、次の3種類だけを保持する。outbox、relay、job status machineは作らない。Queueはat-least-onceであるため、本文・credential・reply tokenを置かず、job参照とtelemetry metadataだけを持つ。
+Storage Queueと同じStorage AccountのTable Storageに`state` tableを一つ置き、次の3種類だけを保持する。outbox、relay、job status machineは作らない。
+
+job storeを持たないため、Agent Workerが必要とする情報はQueue messageが運ぶ。messageは`webhookEventId`、LINEの`userId`、質問文、telemetry metadataを持ち、credentialと`replyToken`は置かない。`userId`は宛先としてPush Messageに必要なので、ハッシュではなく生の値を運ぶ。Queueは同じStorage Account内にあり、Managed Identityでのみ読み書きされ、保存時に暗号化される。
 
 | partition | key | 保持する値 |
 |---|---|---|
@@ -58,7 +60,7 @@ Storage Queueと同じStorage AccountのTable Storageに`state` tableを一つ�
 | `event` | `{webhookEventId}` | 受信時刻。重複投入の抑止だけに使う |
 | `conversation` | `{userIdHash}` | 直近の`responseId`、更新時刻 |
 
-Queue Triggerの標準再試行とpoison queueを使い、独自のrelayや24時間再試行は作らない。Agent Workerが最終的に失敗した場合は再送や代替通知を行わず、次回の利用者メッセージで再試行する。
+Queue Triggerの標準再試行とpoison queueを使い、独自のrelayや24時間再試行は作らない。`host.json`でQueue Triggerの`batchSize`を1にし、同一利用者の連投で`previous_response_id`の読み書きが競合して会話が分岐することを避ける。Agent Workerが最終的に失敗した場合は再送や代替通知を行わず、次回の利用者メッセージで再試行する。
 
 ## Cosmos DB検索ストア
 
@@ -75,9 +77,9 @@ Hosted AgentはPython 3.13のAgent Frameworkで`ResponsesHostServer`を起動す
 | principal | 必要な権限 |
 |---|---|
 | Function App MI | Storage Blob Data Owner、Storage Queue Data Contributor、Storage Table Data Contributor、Cosmos DB Built-in Data Contributor、Key Vault Secrets User、Foundry project scopeでembedding呼び出しとAgent呼び出しに必要なdata-plane role |
-| Hosted Agent identity | `chunks` container scopeのCosmos DB Built-in Data Reader |
+| Hosted Agent identity | `chunks` container scopeのCosmos DB Built-in Data Reader、`knowledge_search`のクエリ埋め込みに必要なFoundry embedding data-plane role |
 | Foundry Project MI | Log Analytics Reader |
 
-Function App MIに必要なFoundryのdata-plane roleは、Sync Functionのembedding呼び出しとAgent Workerのagent呼び出しの両方に必要である。実際のrole名はdeploy時のFoundryのRBACモデルで確認する。
+Function App MIに必要なFoundryのdata-plane roleは、Sync Functionのembedding呼び出しとAgent Workerのagent呼び出しの両方に必要である。`knowledge_search`は受け取ったクエリ文字列を埋め込んでからvector queryを実行するため、Hosted Agent identityもCosmosに加えてembeddingを呼べる必要がある。実際のrole名はdeploy時のFoundryのRBACモデルで確認する。
 
 Agent principal IDはdeploy後に得るため、AgentへのCosmos data-plane role assignmentはローカルのpost-deploy scriptで作成する。詳細は[プラットフォームと運用](platform-and-operations.md#デプロイと復旧)を参照する。

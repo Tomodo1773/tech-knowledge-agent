@@ -8,6 +8,20 @@
 - deploy直前にFoundryのregion、SKU、version、TPMのcapacity / quotaを再確認すること
 - LINE、Key VaultのbootstrapとGitHub同期元の非機密設定に必要な実値を安全に用意できること
 
+## リポジトリ構成
+
+Function AppとHosted Agentは依存が異なるため、別のPython projectとして分ける。
+
+| path | 内容 |
+|---|---|
+| `infra/` | Bicep |
+| `src/functions/` | Function App |
+| `src/agent/` | Hosted Agent |
+| `tests/` | unit test |
+| `scripts/` | post-deployのrole assignment、smoke evaluation、repository policy検証 |
+
+lintとtestはruffとpytestを使う。testの対象はfront matter検証、chunk分割、blob SHA差分判定のようにAzureへ接続しない処理だけとし、Azure resourceのmockは作らない。
+
 ## 実装順
 
 1. Bicep / `azd`の骨組み、Key Vault、Storage、Cosmos、Foundry、Application Insightsを作る。
@@ -33,7 +47,7 @@
 - Application Insightsの保持期間とsampling
 - 実記事から作るsmoke dataset、baseline後の改善優先度
 - 固定するAVM versionと、必要propertyが未対応の場合のraw Bicep
-- Function App MIに付与するFoundryのdata-plane role名
+- Function App MIとHosted Agent identityに付与するFoundryのdata-plane role名
 
 ## MVP完了条件
 
@@ -42,6 +56,7 @@
 - LINEの1:1質問に、根拠記事へのリンク付きでPush Messageを返せる。
 - 直前の質問を踏まえた追い質問に答えられ、24時間後は新しい会話として扱われる。
 - `webhookEventId`の重複チェックにより、Webhook再送で回答が二重に届かない。
+- allowlist外の利用者とgroup / roomには回答せず、監査記録だけが残る。
 - AgentがManaged IdentityでCosmosを検索し、credentialをコードやログへ出さない。
 - 一件のLINE質問と一件のGitHub同期をtraceで追跡できる。
 - 固定約10件のsmoke evaluationを実行し、結果とtraceを確認できる。
