@@ -159,14 +159,15 @@ Slack Events Function、Queue、Agent Worker、conversation state、`eyes` react
 
 W3C Trace Context、固定span、content保護、smoke datasetと実行script、CIを仕上げる。telemetryとevaluationの実装は編集pathを分けられる場合に並列化できるが、最終trace確認と全validationは指示役が直列で行う。
 
-**進捗:** 2026-08-12に、[quality.md](quality.md#telemetry)のspan表どおりの固定span名、属性のallowlist、Slack HTTPからQueueを越えるW3C Trace Context伝播、Agent側の`knowledge.search` / `cosmos.vector_query`を実装した。Slack一問が一traceに収まることをin-memory exporterのtestで確認している。属性は識別子・件数・結果値だけを許可し、質問文、回答、Signing Secret、Bot token、Authorization headerはcustom spanへ記録できない。Python workerがOTelを直接streamするよう`PYTHON_APPLICATIONINSIGHTS_ENABLE_TELEMETRY`をBicepへ追加し、CIへBicep buildを加えてStep 3の残作業も閉じた。smoke evaluationのschema、citation照合、実行scriptは完成しており、実記事から作る`eval/smoke.jsonl`の中身だけが残る。
+**進捗:** 2026-08-12に、[quality.md](quality.md#telemetry)のspan表どおりの固定span名、属性のallowlist、Slack HTTPからQueueを越えるW3C Trace Context伝播、Agent側の`knowledge.search` / `cosmos.vector_query`を実装した。Slack一問が一traceに収まることをin-memory exporterのtestで確認している。属性は識別子・件数・結果値だけを許可し、質問文、回答、Signing Secret、Bot token、Authorization headerはcustom spanへ記録できない。Python workerがOTelを直接streamするよう`PYTHON_APPLICATIONINSIGHTS_ENABLE_TELEMETRY`をBicepへ追加し、CIへBicep buildを加えてStep 3の残作業も閉じた。smoke evaluationのschema、citation照合、実行scriptに加え、実記事28件から作った10件の`eval/smoke.jsonl`も用意した。caseはOAuth、サプライチェーン、Azureコスト、LangGraph、trace、Foundryなど主題が重ならないよう選び、1件は`published: false`の記事にして、公開状態で検索対象を絞らない設計が実際に効くことを確認できるようにした。
 
-**gate:** telemetryとevaluation scriptのcode-side gateは完了。`eval/smoke.jsonl`を実記事から作り、一件のSlack質問と一件のGitHub同期をtraceで追え、約10件のsmoke evaluationを実環境で実行できることを確認するliveゲートが残る。
+**gate:** telemetryとevaluation scriptのcode-side gateは完了。一件のSlack質問と一件のGitHub同期をtraceで追え、10件のsmoke evaluationを実環境で実行できることを確認するliveゲートが残る。
 
 ## 実装時に決める項目
 
 - Application Insightsの保持期間とsampling
-- 実記事から作るsmoke dataset、baseline後の改善優先度
+- smoke evaluationのbaseline後の改善優先度
+- 同期対象repositoryを公開にするか、認証付き取得へ設計を戻すか（[architecture.md](architecture.md#データソース契約)は公開前提のまま）
 - Foundryが`responseId`を保持する期間の実測値と、会話継続の上限7日をそれに収める調整
 
 ## MVP完了条件

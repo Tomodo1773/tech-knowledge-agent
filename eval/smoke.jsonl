@@ -1,0 +1,10 @@
+{"id": "oauth-pkce", "query": "OAuthのPKCEは何のための仕組みで、どんな攻撃を防げるの？", "expectedSources": ["articles/oauth-pkce-security-guide.md"]}
+{"id": "oauth-dcr-mcp", "query": "MCPでClient IDを事前登録せずにOAuthするDCRの流れを教えて", "expectedSources": ["articles/oauth-dynamic-client-registration-mcp.md"]}
+{"id": "cloudflare-access-mcp", "query": "MCPサーバーの認可をCloudflare AccessのManaged OAuthでやる利点は？", "expectedSources": ["articles/cloudflare-access-managed-oauth-mcp.md"]}
+{"id": "claude-code-cron-cost", "query": "Claude CodeのCIポーリングが止まらず課金が膨らんだ原因と教訓は？", "expectedSources": ["articles/claude-code-cron-runaway.md"]}
+{"id": "supply-chain-socket", "query": "npmのサプライチェーン攻撃対策としてSocket.devをどう使った？", "expectedSources": ["articles/socket-github-supply-chain-attack.md"]}
+{"id": "azure-stop-cost", "query": "App Serviceを停止してもAzureの料金が下がらないのはなぜ？", "expectedSources": ["articles/azure-for-beginners-cost-trap.md"]}
+{"id": "langgraph-elements", "query": "LangGraphのgraph、state、node、edgeの関係とreducerの役割は？", "expectedSources": ["articles/langgraph-basic-elements.md"]}
+{"id": "foundry-llm-tracing", "query": "Azure AI FoundryでLLMのトレースを取るにはApplication Insightsをどう設定する？", "expectedSources": ["articles/azure-ai-foundry-llm-tracing.md"]}
+{"id": "prompty-usage", "query": "promptyでプロンプトを管理してlangchainから使う方法は？", "expectedSources": ["articles/prompty-introduction-and-usage.md"]}
+{"id": "foundry-hosted-agents", "query": "Foundry Hosted Agentsの会話履歴はどこに保存される？", "expectedSources": ["articles/microsoft-foundry-hosted-agents.md"]}
