@@ -61,7 +61,8 @@ def test_runtime_wires_one_managed_identity_to_bounded_sdk_clients(
         def __init__(self, **kwargs: object) -> None:
             calls["project"] = kwargs
 
-        def get_openai_client(self) -> FakeOpenAI:
+        def get_openai_client(self, **kwargs: object) -> FakeOpenAI:
+            calls["openai_client"] = kwargs
             return FakeOpenAI()
 
     monkeypatch.setattr(azure.identity, "DefaultAzureCredential", lambda: credential)
@@ -85,6 +86,11 @@ def test_runtime_wires_one_managed_identity_to_bounded_sdk_clients(
     assert calls["project"]["connection_timeout"] == 5  # type: ignore[index]
     assert calls["project"]["read_timeout"] == 30  # type: ignore[index]
     assert calls["openai_options"] == {"timeout": 30.0, "max_retries": 2}
+    # Embeddings must go to the account root. The project-scoped route the SDK builds by
+    # default answers 404 for embeddings, and that only surfaces against the real service.
+    assert calls["openai_client"] == {  # type: ignore[comparison-overlap]
+        "base_url": "https://example." "services.ai.azure.com/openai/v1/"
+    }
     assert runtime.settings.chunking_version == "markdown-v1-1600-200"
 
     build_sync_runtime.cache_clear()

@@ -35,6 +35,10 @@ var monitoringMetricsPublisherRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '3913510d-42f4-4e42-8a64-420c390055eb'
 )
+var cognitiveServicesOpenAIUserRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
+)
 
 module account 'br/public:avm/res/cognitive-services/account:0.18.0' = {
   name: 'foundry-account'
@@ -132,6 +136,20 @@ resource functionProjectUser 'Microsoft.Authorization/roleAssignments@2022-04-01
     principalId: functionPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: foundryUserRoleId
+  }
+}
+
+// Model deployments are account resources, and the account-level /openai/v1 route is the
+// only one that serves embeddings, so a project-scoped assignment does not reach it. RBAC
+// does not inherit from a child project up to its account. Scoped to the account but with
+// the narrowest inference role rather than reusing the broad Foundry User here.
+resource functionAccountInference 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: foundryAccount
+  name: guid(foundryAccount.id, functionPrincipalId, cognitiveServicesOpenAIUserRoleId)
+  properties: {
+    principalId: functionPrincipalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: cognitiveServicesOpenAIUserRoleId
   }
 }
 

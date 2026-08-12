@@ -107,6 +107,12 @@ def test_create_runtime_wires_separate_chat_and_embedding_clients(
         read_timeout=30,
         retry_total=2,
     )
+    # The embedding client must target the account root. The project-scoped route the SDK
+    # builds by default answers 404 for embeddings, which only shows up against the real
+    # service, so the base_url override is pinned here.
+    query_project.return_value.get_openai_client.assert_called_once_with(
+        base_url=f"https://{FOUNDRY_TEST_HOST}/openai/v1/",
+    )
     query_project.return_value.get_openai_client.return_value.with_options.assert_called_once_with(
         timeout=30.0,
         max_retries=2,

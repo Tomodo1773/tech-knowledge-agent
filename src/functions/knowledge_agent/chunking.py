@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -12,6 +12,10 @@ import yaml
 
 CHUNK_MAX_CHARS = 1600
 CHUNK_OVERLAP_CHARS = 200
+
+# Zenn writes published_at as "YYYY-MM-DD HH:MM" with no offset and means JST. Japan has
+# no daylight saving, so a fixed +09:00 is exact and avoids depending on a tz database.
+_ZENN_TIMEZONE = timezone(timedelta(hours=9))
 
 _HEADING_PATTERN = re.compile(r"^ {0,3}#{1,6}\s+(?P<heading>.+?)\s*$")
 _FENCE_PATTERN = re.compile(r"^\s*(?P<marker>`{3,}|~{3,})")
@@ -81,7 +85,7 @@ def _published_at(value: Any) -> str | None:
     if isinstance(value, datetime):
         parsed = value
     elif isinstance(value, date):
-        parsed = datetime.combine(value, time.min, tzinfo=UTC)
+        parsed = datetime.combine(value, time.min)
     elif isinstance(value, str):
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -90,7 +94,8 @@ def _published_at(value: Any) -> str | None:
     else:
         raise ArticleFormatError("published_at must be an ISO 8601 timestamp")
     if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ArticleFormatError("published_at must include a timezone")
+        # Rejecting these would reject Zenn's own format, which omits the offset.
+        parsed = parsed.replace(tzinfo=_ZENN_TIMEZONE)
     normalized = parsed.astimezone(UTC).isoformat().replace("+00:00", "Z")
     return normalized
 

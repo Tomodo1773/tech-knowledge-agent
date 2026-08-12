@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from functools import lru_cache
+from urllib.parse import urlsplit
 
 from knowledge_agent.azure_adapters import (
     CosmosIndexRepository,
@@ -16,6 +17,18 @@ from knowledge_agent.github_source import GitHubSourceClient
 from knowledge_agent.http_transport import GitHubHttpTransport
 from knowledge_agent.settings import SyncSettings
 from knowledge_agent.sync_function import run_sync
+
+
+def account_openai_base_url(project_endpoint: str) -> str:
+    """Return the account-level OpenAI base URL that actually serves embeddings.
+
+    The project-scoped route the SDK builds by default
+    (``/api/projects/<project>/openai/v1/``) serves chat completions but answers 404 for
+    embeddings, so the embedding client has to target the account root instead. Passing
+    base_url keeps the SDK's own token handling.
+    """
+    parts = urlsplit(project_endpoint)
+    return f"{parts.scheme}://{parts.netloc}/openai/v1/"
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +77,9 @@ def build_sync_runtime() -> SyncRuntime:
         read_timeout=30,
         retry_total=2,
     )
-    openai_client = project.get_openai_client().with_options(
+    openai_client = project.get_openai_client(
+        base_url=account_openai_base_url(settings.foundry_project_endpoint),
+    ).with_options(
         timeout=30.0,
         max_retries=2,
     )

@@ -9,6 +9,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from agent_framework import Agent, tool
 from agent_framework.foundry import FoundryChatClient
@@ -32,6 +33,18 @@ Keep answers concise and end supported answers with the tool's `## Sources` bloc
 If retrieved evidence is absent or insufficient, say so and do not make an unsupported claim.
 The outer Responses protocol owns conversation and reply context; do not reconstruct history.
 """
+
+
+def account_openai_base_url(project_endpoint: str) -> str:
+    """Return the account-level OpenAI base URL that actually serves embeddings.
+
+    The project-scoped route the SDK builds by default
+    (``/api/projects/<project>/openai/v1/``) serves chat completions but answers 404 for
+    embeddings, so the query embedding client has to target the account root instead.
+    Passing base_url keeps the SDK's own token handling.
+    """
+    parts = urlsplit(project_endpoint)
+    return f"{parts.scheme}://{parts.netloc}/openai/v1/"
 
 
 def create_knowledge_search_tool(service: KnowledgeSearchService) -> Any:
@@ -165,7 +178,9 @@ async def create_runtime(
             read_timeout=30,
             retry_total=2,
         )
-        openai_client = query_project.get_openai_client().with_options(
+        openai_client = query_project.get_openai_client(
+            base_url=account_openai_base_url(settings.foundry_project_endpoint),
+        ).with_options(
             timeout=30.0,
             max_retries=2,
         )
