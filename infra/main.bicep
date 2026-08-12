@@ -22,10 +22,6 @@ param principalId string
 ])
 param principalType string
 
-@description('Email address for Azure Budget notifications. Supply through azd environment state.')
-@secure()
-param budgetContactEmail string
-
 @description('Owner of the private article GitHub repository; supplied through azd environment state.')
 @secure()
 param githubOwner string
@@ -74,8 +70,6 @@ module observability 'app/observability.bicep' = {
   scope: rg
   params: {
     applicationInsightsName: 'appi-${token}'
-    budgetContactEmail: budgetContactEmail
-    budgetName: 'budget-${environmentName}'
     location: location
     logAnalyticsName: 'log-${token}'
     tags: tags

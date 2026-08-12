@@ -6,7 +6,6 @@
     "location": { "value": "${AZURE_LOCATION=japaneast}" },
     "principalId": { "value": "${AZURE_PRINCIPAL_ID}" },
     "principalType": { "value": "${AZURE_PRINCIPAL_TYPE}" },
-    "budgetContactEmail": { "value": "${AZURE_BUDGET_CONTACT_EMAIL}" },
     "githubOwner": { "value": "${GITHUB_OWNER}" },
     "githubRepository": { "value": "${GITHUB_REPOSITORY}" },
     "githubDefaultBranch": { "value": "${GITHUB_DEFAULT_BRANCH=main}" },

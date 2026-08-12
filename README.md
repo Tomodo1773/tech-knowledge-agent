@@ -41,7 +41,7 @@ flowchart LR
 - Slackは単一workspace・単一利用者・DMだけを対象とし、トップレベルメッセージを会話の起点、スレッド内メッセージを追い質問として扱う。
 - 記事repositoryはKey Vault由来のGitHub tokenで認証したGitHub APIで読み、Azure内の接続はManaged Identityを使う。
 - 個人MVPなので、deployはローカルの`azd`から行い、deploy後の確認は一度の疎通確認に限定する。
-- コスト方針とAzure Budgetは[プラットフォームと運用](docs/platform-and-operations.md#コストと日常運用)を正とする。
+- コスト方針は[プラットフォームと運用](docs/platform-and-operations.md#コストと日常運用)を正とする。予算アラートはproject単位ではなくAzureテナント全体で一括設定する。
 
 詳細な設計値と運用手順は、READMEへ重複させず下記を正とする。
 

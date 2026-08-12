@@ -23,7 +23,7 @@ Functionsはalways-ready 0で始める。Slack Events APIはコールドスタ�
 
 ## コストと日常運用
 
-月額の目安は1,000円とし、Azure Budgetに予測・実績通知を設定する。Budgetはhard stopではないため、通知後に利用状況を確認する。Application Insightsにはdaily cap（初期値0.1 GB/日）を設定し、telemetry取り込みの暴走を防ぐ。Cosmos throughput、model token、Application Insightsの取り込み・保持、Key Vault操作は継続課金になり得る。単価や無料枠は変動するため、実resource作成前に料金を確認する。
+月額の目安は1,000円とする。予算アラートはproject単位ではなくAzureテナント全体で一括設定する方針とし、本repositoryのIaCではBudgetを作らない。Application Insightsにはdaily cap（初期値0.1 GB/日）を設定し、telemetry取り込みの暴走を防ぐ。Cosmos throughput、model token、Application Insightsの取り込み・保持、Key Vault操作は継続課金になり得る。単価や無料枠は変動するため、実resource作成前に料金を確認する。
 
 MVPでは個人利用・dev一環境を前提とする。自動fallbackやrollback機構は作らず、Queue滞留・poison message、Function/Agentエラー、同期停止、予算超過を必要に応じて確認する。監視項目の詳細は[quality.md](quality.md)を参照する。
 
@@ -41,7 +41,7 @@ Azure Resource Managerで表せる基盤はBicepを正とし、`azd provision`�
 | `infra/app/functions.bicep` | FunctionsとStorage |
 | `infra/app/data.bicep` | Cosmos DB |
 | `infra/app/foundry.bicep` | Foundry、model deployment、Hosted Agent関連基盤 |
-| `infra/app/observability.bicep` | Log Analytics、Application Insights、Budget |
+| `infra/app/observability.bicep` | Log Analytics、Application Insights |
 | `infra/app/security.bicep` | Key Vaultとidentity |
 
 AVMの既定値には、個人MVPの方針と逆に振れるものがある。Cosmosの`zoneRedundant`は既定`true`、`backupPolicyType`は既定で課金対象の`Continuous30Days`、Key Vaultの`sku`は既定`premium`である。いずれも該当moduleで明示的に上書きし、理由をcommentへ残す。固定versionを上げるときは、これらの既定値が変わっていないかを合わせて確認する。

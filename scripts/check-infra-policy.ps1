@@ -27,8 +27,7 @@ $expectedModules = @(
     'avm/res/cognitive-services/account:0.18.0',
     'avm/res/operational-insights/workspace:0.16.1',
     'avm/res/insights/component:0.8.0',
-    'avm/res/key-vault/vault:0.14.0',
-    'avm/res/consumption/budget/rg-scope:0.1.0'
+    'avm/res/key-vault/vault:0.14.0'
 )
 
 $bicepFiles = Get-ChildItem -LiteralPath (Join-Path $root 'infra') -Filter '*.bicep' -Recurse

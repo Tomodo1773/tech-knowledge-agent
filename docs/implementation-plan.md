@@ -172,7 +172,7 @@ W3C Trace Context、固定span、content保護、smoke datasetと実行script、
 2026-08-12時点でStep 0〜7のcode-sideは完了し、残るのは実resourceを伴う確認だけである。順序は依存関係で決まっており飛ばせない。手順とコマンドの正本は[platform-and-operations.md](platform-and-operations.md#デプロイと復旧)、確認する中身は各Stepのgateを参照する。
 
 1. **実resource作成の許可とコスト再確認。** [開始条件](#開始条件)のとおり、`azd provision`直前にFoundryのregion、SKU、model version、TPMのcapacity / quotaと料金を確認する。ここから継続課金が始まるため、利用者の明示的な許可なしに次へ進まない。
-2. **azd環境変数の設定。** 未設定の変数は空文字へ解決されるため、`azd env set`で次を先に入れる。実値はrepositoryにも文書にも残さない。`AZURE_PRINCIPAL_TYPE`（`User`）、`AZURE_BUDGET_CONTACT_EMAIL`、`GITHUB_OWNER`、`GITHUB_REPOSITORY`、`SLACK_ALLOWED_TEAM_ID`、`SLACK_ALLOWED_USER_ID`。`AZURE_LOCATION`と`GITHUB_DEFAULT_BRANCH`は既定値を持ち、`AZURE_PRINCIPAL_ID`はazdが設定する。resource group名は`rg-<環境名>`に決まるので設定項目ではない。
+2. **azd環境変数の設定。** 未設定の変数は空文字へ解決されるため、`azd env set`で次を先に入れる。実値はrepositoryにも文書にも残さない。`AZURE_PRINCIPAL_TYPE`（`User`）、`GITHUB_OWNER`、`GITHUB_REPOSITORY`、`SLACK_ALLOWED_TEAM_ID`、`SLACK_ALLOWED_USER_ID`。`AZURE_LOCATION`と`GITHUB_DEFAULT_BRANCH`は既定値を持ち、`AZURE_PRINCIPAL_ID`はazdが設定する。resource group名は`rg-<環境名>`に決まるので設定項目ではない。
 3. **`azd provision`。** Bicepを適用し、Key Vault、Cosmos、Functions、Foundry、observabilityを作る。`--preview`で先にparameterの解決結果を確認してよい。
 4. **secretのbootstrap。** Key Vaultへ`slack-signing-secret`、`slack-bot-token`、`github-token`を入れる。書き込みに要るKey Vault Secrets OfficerはBicepがdeploy実行者へ付与済みである。`github-token`は記事repositoryのContents読み取りだけに絞ったfine-grained tokenとする。実値はrepositoryにも文書にもログにも残さない。
 5. **`azd deploy`。** FunctionsとHosted Agentを配る。root postdeploy hookがAgent identityへCosmos Readerを付け、Responses endpointをFunction Appの`KNOWLEDGE_AGENT_ENDPOINT`へ反映する。Agent未deployのままFunctionsだけを配って配線済みと扱わない。
