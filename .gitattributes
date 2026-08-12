@@ -1,0 +1,12 @@
+# LF everywhere, in the repository and in the working tree.
+#
+# Without this file the checked-in line endings depend on each machine's
+# core.autocrlf, and the repository already drifted: most files were LF while a
+# handful of Markdown and Python files were committed with CRLF. Every added line
+# in those files then carried a trailing \r, which `git diff --check` reports as
+# trailing whitespace, making the validation step in docs/repository-policy.md
+# impossible to pass.
+#
+# text=auto still detects binary content by itself, so no per-extension rules are
+# needed for the files this repository holds today.
+* text=auto eol=lf

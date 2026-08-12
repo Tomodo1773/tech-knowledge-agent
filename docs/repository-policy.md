@@ -51,4 +51,5 @@ FunctionsとHosted Agentは独立したuv projectとしてmanifestとlockfileを
 
 - repository policy: `pwsh -NoProfile -File scripts/check-repository-policy.ps1`
 - whitespace: `git diff --check`
+- 行末はLFへ統一し、`.gitattributes`の`* text=auto eol=lf`で固定する。CRLFで記録されたfileは追加行が`\r`を持ち、`git diff --check`がtrailing whitespaceとして常に報告するため、この検証が意味を持たなくなる。新しいfileを追加するときも行末を変換しない
 - コード追加後は、対象runtimeのlint、unit test、Bicep buildを実行する。
