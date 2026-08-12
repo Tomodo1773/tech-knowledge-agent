@@ -52,7 +52,7 @@ Agent version、deploy後に判明するAgent principalへのCosmos data-plane r
 
 deployはローカルから`azd`で行い、GitHub ActionsからはAzureへログインしない。CIは静的検査、指示ファイル同期、およびAzureへログインしない`az bicep build`を行う。protected environmentとOIDC federated credentialはMVPでは構成しない。実resource名、principal ID、endpoint、role assignment、deployment outputは公開ログ・artifact・PR commentへ出さない。
 
-Application Insightsはlocal authを無効化する。Function Appにはconnection stringと`APPLICATIONINSIGHTS_AUTHENTICATION_STRING=Authorization=AAD;ClientId=<Function UAI client ID>`を設定し、UAIへApplication Insights scopeのMonitoring Metrics Publisherを付与する。Foundry projectのApp Insights connectionは現行公式sampleと同じ`2025-09-01` APIの`ProjectManagedIdentity`を使い、credential keyを保存しない。Project MIにも同scopeのMonitoring Metrics Publisherを付与し、connection stringは接続metadataとしてだけ渡す。
+Application Insightsはlocal authを無効化する。Function Appにはconnection stringと`APPLICATIONINSIGHTS_AUTHENTICATION_STRING=Authorization=AAD;ClientId=<Function UAI client ID>`を設定し、UAIへApplication Insights scopeのMonitoring Metrics Publisherを付与する。Foundry projectのApp Insights connectionは現行公式sampleと同じ`2025-09-01` APIの`ProjectManagedIdentity`を使い、credential keyを保存しない。Project MIにも同scopeのMonitoring Metrics Publisherを付与し、connection stringは接続metadataとしてだけ渡す。Hosted Agentのinstance identityにも同じroleが要る。これがないとAgent側のspanだけがForbiddenで捨てられ、Slack一問のtraceがAgentの手前で途切れる。identityがdeploy後にしか判明しないため、Cosmos readerや推論roleと同じくpost-deploy scriptで付与する。
 
 Hosted Agentは評価と障害解析のため`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`を固定し、質問・回答・tool入出力をApplication Insightsへ記録する。これは公開可能な技術記事と個人の技術質問だけを扱うMVP前提であり、credential、個人情報、業務上の非公開情報を入力しない。閲覧権限、保持期間、daily capの保護は[品質](quality.md#content記録と保護)を正とする。
 
