@@ -5,6 +5,13 @@ param tags object
 param functionIdentityName string
 param keyVaultName string
 param logAnalyticsResourceId string
+@secure()
+param deployerPrincipalId string
+@allowed([
+  'User'
+  'ServicePrincipal'
+])
+param deployerPrincipalType string
 
 // No identity AVM version is part of the Step 0 pin set. Keep this single raw resource
 // until the next AVM review instead of introducing an unreviewed module dependency.
@@ -19,6 +26,9 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.14.0' = {
   params: {
     name: keyVaultName
     location: location
+    // The AVM default is 'premium'. Only secrets are stored here, so the HSM-backed
+    // tier buys nothing for this MVP.
+    sku: 'standard'
     enableRbacAuthorization: true
     enablePurgeProtection: false
     softDeleteRetentionInDays: 7
@@ -27,10 +37,18 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.14.0' = {
       bypass: 'AzureServices'
       defaultAction: 'Allow'
     }
+    // AuditEvent is the one log with no platform-metric equivalent, and it is how a
+    // failed Key Vault reference from the Function App gets diagnosed. Everything the
+    // AVM 'allLogs' default would add is either policy noise or already covered by the
+    // OpenTelemetry spans in docs/quality.md.
     diagnosticSettings: [
       {
         name: 'send-to-workspace'
         workspaceResourceId: logAnalyticsResourceId
+        logCategoriesAndGroups: [
+          { category: 'AuditEvent' }
+        ]
+        metricCategories: []
       }
     ]
     roleAssignments: [
@@ -38,6 +56,16 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.14.0' = {
         principalId: functionIdentity.properties.principalId
         principalType: 'ServicePrincipal'
         roleDefinitionIdOrName: 'Key Vault Secrets User'
+      }
+      // Deployer data-plane access. Provisioning already requires Owner or RBAC
+      // Administrator to create role assignments, so this grants nothing the deployer
+      // could not self-assign; it makes the bootstrap in docs/platform-and-operations.md
+      // reproducible instead of a hidden manual step. Secrets Officer is the narrowest
+      // built-in role that can write a secret. Remove this entry to bootstrap by hand.
+      {
+        principalId: deployerPrincipalId
+        principalType: deployerPrincipalType
+        roleDefinitionIdOrName: 'Key Vault Secrets Officer'
       }
     ]
     tags: tags

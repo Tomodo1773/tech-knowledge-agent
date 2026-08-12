@@ -15,6 +15,8 @@ Slack質問は複数プロセスにまたがるため、一つの論理traceと�
 | GitHub同期 | `github.sync.run`、`github.tree.fetch`、`github.contents.fetch`、`embedding.create`、`cosmos.upsert` |
 | Slack質問 | `slack.event.receive`、`queue.publish`、`agent.invoke`、`knowledge.search`、`cosmos.vector_query`、`slack.message.send` |
 
+resource診断設定はKey Vaultの`AuditEvent`だけをLog Analyticsへ流す。Storage、Cosmos、Function App、Foundry accountには診断設定を作らない。AVMの既定は`allLogs`であり、Storageならblob / queue / tableの全トランザクション、Cosmosなら全`DataPlaneRequests`が1行ずつ入る。これは上表のspanと重複するうえ、0.1 GB/日のdaily capを先に使い切って本来見たいtelemetryを止める。platform metricsは診断設定なしでAzure Monitorから参照できる。Key Vaultの`AuditEvent`だけは同等のmetricがなく、Function AppのKey Vault参照が解決できないときの切り分けに要るため残す。
+
 span名は固定の低カーディナリティ値にする。検索用にSlack `eventId`をcorrelation IDとして、GitHub commit SHA、queue状況、再index件数、モデル利用量、検索件数・最小distance、Cosmosの時間/RUを属性またはログに残す。ログにはTrace IDとSpan IDを付ける。
 
 ## Content記録と保護

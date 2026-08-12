@@ -52,12 +52,10 @@ module account 'br/public:avm/res/cognitive-services/account:0.18.0' = {
       systemAssigned: true
     }
     deployments: deployments
-    diagnosticSettings: [
-      {
-        name: 'send-to-workspace'
-        workspaceResourceId: logAnalyticsResourceId
-      }
-    ]
+    // No diagnostic settings: the AVM 'allLogs' default adds RequestResponse and Trace
+    // rows for the same calls the Hosted Agent already reports through OpenTelemetry
+    // with content capture. logAnalyticsResourceId is still needed below for the
+    // project's Log Analytics Data Reader assignment.
     tags: tags
     enableTelemetry: false
   }

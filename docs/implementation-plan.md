@@ -121,6 +121,8 @@ Hosted Agent / `azd`、Azure IaC / RBAC / capacity、Functions / Slackの3観点
 
 **進捗:** 2026-08-12にCIへ`az bicep build`を追加し、gateを閉じた。subscription / resource groupと、Functions / Storage、Cosmos、Foundry / model、observability、Key Vault / identityのmodule、post-deployのAgent Cosmos reader assignmentを実装した。model deploymentは`azure.yaml`から`AI_PROJECT_DEPLOYMENTS`で渡し、extensionとBicepの二重定義を避けた。direct source ZIP deploymentに顧客ACRは不要なため構成に含めない。固定AVM tagは公式Git refsで実在を再確認し、telemetry無効化、RBAC、diagnostic settings、secure outputはlocal policy検査で固定済みである。2026-08-12に固定AVM moduleを`mcr.microsoft.com`のpinned tagからlocal cacheへrestoreし、`az bicep build infra/main.bicep`がローカルで成功することを確認した。残る警告はCosmos preview API版のBCP081のみで、errorはない。実resourceは作成していない。
 
+同日、provision直前のIaCレビューで次を修正した。Flex Consumptionが受け付けない`FUNCTIONS_EXTENSION_VERSION` / `FUNCTIONS_WORKER_RUNTIME`を削り、未設定時に空文字でresource group名を上書きしていた`resourceGroupName` parameterを廃し、`rg-<環境名>`をvarで導出する形にした。local auth無効化の裏返しとして必要なdeploy実行者のdata-plane role（Key Vault Secrets Officer、container scopeのCosmos Data Contributor、StorageのBlob / Queue / Table Data Contributor）をBicepへ追加した。方針と逆に振れていたAVM既定値（Cosmosの`zoneRedundant`と`Continuous30Days`、Key Vaultの`premium`）を明示的に上書きし、`allLogs`既定のresource診断設定をKey Vaultの`AuditEvent`だけに絞った。コードが読まない`COSMOS_DATABASE_NAME` / `COSMOS_CONTAINER_NAME`と、FC1では無視される`skuCapacity`も除いた。
+
 **gate:** 静的検査、ローカルとCIのBicep buildは完了。secretや実resource値を出力・commitせず、ここではまだprovisionしない。
 
 ### 4. 同期vertical slice
@@ -170,13 +172,14 @@ W3C Trace Context、固定span、content保護、smoke datasetと実行script、
 2026-08-12時点でStep 0〜7のcode-sideは完了し、残るのは実resourceを伴う確認だけである。順序は依存関係で決まっており飛ばせない。手順とコマンドの正本は[platform-and-operations.md](platform-and-operations.md#デプロイと復旧)、確認する中身は各Stepのgateを参照する。
 
 1. **実resource作成の許可とコスト再確認。** [開始条件](#開始条件)のとおり、`azd provision`直前にFoundryのregion、SKU、model version、TPMのcapacity / quotaと料金を確認する。ここから継続課金が始まるため、利用者の明示的な許可なしに次へ進まない。
-2. **`azd provision`。** Bicepを適用し、Key Vault、Cosmos、Functions、Foundry、observabilityを作る。
-3. **secretのbootstrap。** Key Vaultへ`slack-signing-secret`、`slack-bot-token`、`github-token`を入れる。`github-token`は記事repositoryのContents読み取りだけに絞ったfine-grained tokenとする。実値はrepositoryにも文書にもログにも残さない。
-4. **`azd deploy`。** FunctionsとHosted Agentを配る。root postdeploy hookがAgent identityへCosmos Readerを付け、Responses endpointをFunction Appの`KNOWLEDGE_AGENT_ENDPOINT`へ反映する。Agent未deployのままFunctionsだけを配って配線済みと扱わない。
-5. **Slack App bootstrap。** [Bootstrap](platform-and-operations.md#bootstrap)に従い`slack/manifest.yaml`からAppを作り、Function endpointが決まってからEvents API Request URLを登録する。
-6. **Step 4のliveゲート。** 初回、無変更の二回目、更新、削除の4ケースを実環境で追う。
-7. **Step 5と6のliveゲート。** Slackを介さずAgentを直接invokeして根拠記事付き回答を確認し、その後Slack DM、追い質問、allowlist外、再送event、poison messageを確認する。
-8. **Step 7のliveゲート。** 一件のSlack質問と一件のGitHub同期をtraceで追い、`scripts/run-smoke-evaluation.py`で10件を実行する。
+2. **azd環境変数の設定。** 未設定の変数は空文字へ解決されるため、`azd env set`で次を先に入れる。実値はrepositoryにも文書にも残さない。`AZURE_PRINCIPAL_TYPE`（`User`）、`AZURE_BUDGET_CONTACT_EMAIL`、`GITHUB_OWNER`、`GITHUB_REPOSITORY`、`SLACK_ALLOWED_TEAM_ID`、`SLACK_ALLOWED_USER_ID`。`AZURE_LOCATION`と`GITHUB_DEFAULT_BRANCH`は既定値を持ち、`AZURE_PRINCIPAL_ID`はazdが設定する。resource group名は`rg-<環境名>`に決まるので設定項目ではない。
+3. **`azd provision`。** Bicepを適用し、Key Vault、Cosmos、Functions、Foundry、observabilityを作る。`--preview`で先にparameterの解決結果を確認してよい。
+4. **secretのbootstrap。** Key Vaultへ`slack-signing-secret`、`slack-bot-token`、`github-token`を入れる。書き込みに要るKey Vault Secrets OfficerはBicepがdeploy実行者へ付与済みである。`github-token`は記事repositoryのContents読み取りだけに絞ったfine-grained tokenとする。実値はrepositoryにも文書にもログにも残さない。
+5. **`azd deploy`。** FunctionsとHosted Agentを配る。root postdeploy hookがAgent identityへCosmos Readerを付け、Responses endpointをFunction Appの`KNOWLEDGE_AGENT_ENDPOINT`へ反映する。Agent未deployのままFunctionsだけを配って配線済みと扱わない。
+6. **Slack App bootstrap。** [Bootstrap](platform-and-operations.md#bootstrap)に従い`slack/manifest.yaml`からAppを作り、Function endpointが決まってからEvents API Request URLを登録する。
+7. **Step 4のliveゲート。** 初回、無変更の二回目、更新、削除の4ケースを実環境で追う。
+8. **Step 5と6のliveゲート。** Slackを介さずAgentを直接invokeして根拠記事付き回答を確認し、その後Slack DM、追い質問、allowlist外、再送event、poison messageを確認する。
+9. **Step 7のliveゲート。** 一件のSlack質問と一件のGitHub同期をtraceで追い、`scripts/run-smoke-evaluation.py`で10件を実行する。あわせて、local authを無効にしたApplication Insightsへworker processのspanが届いているかを最初のtraceで確認する。公式はEntra認証をhostとworkerで別々に構成すると説明しており、届かない場合はここだけが欠ける。
 
 失敗してもrollbackせず、traceとログから原因を切り分けて修正し再deployする。
 

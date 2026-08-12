@@ -9,7 +9,13 @@ param functionIdentityResourceId string
 param functionIdentityClientId string
 @secure()
 param functionPrincipalId string
-param logAnalyticsResourceId string
+@secure()
+param deployerPrincipalId string
+@allowed([
+  'User'
+  'ServicePrincipal'
+])
+param deployerPrincipalType string
 @secure()
 param applicationInsightsConnectionString string
 param applicationInsightsResourceId string
@@ -60,17 +66,15 @@ module storage 'br/public:avm/res/storage/storage-account:0.33.0' = {
     allowBlobPublicAccess: false
     minimumTlsVersion: 'TLS1_2'
     publicNetworkAccess: 'Enabled'
+    // No service-level diagnostic settings: the AVM 'allLogs' default records every
+    // blob, queue, and table transaction, including the host's queue polling. That
+    // duplicates the queue.* and cosmos.* spans and is the fastest way to exhaust the
+    // 0.1 GB/day workspace cap. Platform metrics remain available without them.
     blobServices: {
       containers: [
         {
           name: 'deployment'
           publicAccess: 'None'
-        }
-      ]
-      diagnosticSettings: [
-        {
-          name: 'send-to-workspace'
-          workspaceResourceId: logAnalyticsResourceId
         }
       ]
     }
@@ -79,22 +83,10 @@ module storage 'br/public:avm/res/storage/storage-account:0.33.0' = {
         { name: 'slack-questions' }
         { name: 'slack-questions-poison' }
       ]
-      diagnosticSettings: [
-        {
-          name: 'send-to-workspace'
-          workspaceResourceId: logAnalyticsResourceId
-        }
-      ]
     }
     tableServices: {
       tables: [
         { name: 'state' }
-      ]
-      diagnosticSettings: [
-        {
-          name: 'send-to-workspace'
-          workspaceResourceId: logAnalyticsResourceId
-        }
       ]
     }
     roleAssignments: [
@@ -113,6 +105,24 @@ module storage 'br/public:avm/res/storage/storage-account:0.33.0' = {
         principalType: 'ServicePrincipal'
         roleDefinitionIdOrName: 'Storage Table Data Contributor'
       }
+      // Shared key access is disabled, so the deployer needs data-plane roles to run the
+      // Functions locally and to inspect the queue, poison queue, and state table during
+      // the live gates. Contributor, not the Owner the Flex host itself requires.
+      {
+        principalId: deployerPrincipalId
+        principalType: deployerPrincipalType
+        roleDefinitionIdOrName: 'Storage Blob Data Contributor'
+      }
+      {
+        principalId: deployerPrincipalId
+        principalType: deployerPrincipalType
+        roleDefinitionIdOrName: 'Storage Queue Data Contributor'
+      }
+      {
+        principalId: deployerPrincipalId
+        principalType: deployerPrincipalType
+        roleDefinitionIdOrName: 'Storage Table Data Contributor'
+      }
     ]
     tags: tags
     enableTelemetry: false
@@ -127,7 +137,6 @@ module plan 'br/public:avm/res/web/serverfarm:0.7.0' = {
     kind: 'functionapp'
     reserved: true
     skuName: 'FC1'
-    skuCapacity: 0
     zoneRedundant: false
     tags: tags
     enableTelemetry: false
@@ -175,8 +184,9 @@ module functionApp 'br/public:avm/res/web/site:0.24.0' = {
       {
         name: 'appsettings'
         properties: {
-          FUNCTIONS_EXTENSION_VERSION: '~4'
-          FUNCTIONS_WORKER_RUNTIME: 'python'
+          // FUNCTIONS_EXTENSION_VERSION and FUNCTIONS_WORKER_RUNTIME are deprecated in
+          // Flex Consumption and rejected as invalid app settings; the runtime comes from
+          // functionAppConfig.runtime above.
           AzureWebJobsStorage__accountName: storageAccountName
           AzureWebJobsStorage__credential: 'managedidentity'
           AzureWebJobsStorage__clientId: functionIdentityClientId
@@ -187,9 +197,9 @@ module functionApp 'br/public:avm/res/web/site:0.24.0' = {
           PYTHON_APPLICATIONINSIGHTS_ENABLE_TELEMETRY: 'true'
           AZURE_CLIENT_ID: functionIdentityClientId
           AZURE_STORAGE_ACCOUNT_NAME: storageAccountName
+          // The database and container names are fixed contract constants in
+          // contracts.py, not settings, so they are deliberately not app settings here.
           COSMOS_ENDPOINT: cosmosEndpoint
-          COSMOS_DATABASE_NAME: 'knowledge'
-          COSMOS_CONTAINER_NAME: 'chunks'
           FOUNDRY_PROJECT_ENDPOINT: foundryProjectEndpoint
           EMBEDDING_MODEL_DEPLOYMENT_NAME: embeddingModelDeploymentName
           GITHUB_OWNER: githubOwner
@@ -204,12 +214,8 @@ module functionApp 'br/public:avm/res/web/site:0.24.0' = {
         }
       }
     ]
-    diagnosticSettings: [
-      {
-        name: 'send-to-workspace'
-        workspaceResourceId: logAnalyticsResourceId
-      }
-    ]
+    // No diagnostic settings: host.json sets telemetryMode OpenTelemetry, so host and
+    // worker logs already reach the same workspace through Application Insights.
     tags: union(tags, {
       'azd-service-name': 'functions'
     })

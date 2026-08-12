@@ -116,9 +116,12 @@ Hosted AgentはPython 3.13のAgent Frameworkで`ResponsesHostServer`を起動す
 
 | principal | 必要な権限 |
 |---|---|
-| Function App MI | Storage Blob Data Owner、Storage Queue Data Contributor、Storage Table Data Contributor、Cosmos DB Built-in Data Contributor、Key Vault Secrets User、Foundry project scopeのFoundry User、Application Insights scopeのMonitoring Metrics Publisher |
+| Function App MI | Storage Blob Data Owner、Storage Queue Data Contributor、Storage Table Data Contributor、`chunks` container scopeのCosmos DB Built-in Data Contributor、Key Vault Secrets User、Foundry project scopeのFoundry User、Application Insights scopeのMonitoring Metrics Publisher |
 | Hosted Agent identity | `chunks` container scopeのCosmos DB Built-in Data Reader |
 | Foundry Project MI | Foundry account scopeのFoundry User、Log Analytics workspace scopeのLog Analytics Data Reader、Application Insights scopeのMonitoring Metrics Publisher |
+| deploy実行者 | Foundry project scopeのFoundry Project Manager、Key Vault Secrets Officer、`chunks` container scopeのCosmos DB Built-in Data Contributor、Storage Blob / Queue / Table Data Contributor |
+
+deploy実行者へのdata-plane roleは、local authを無効にした結果として必要になるものである。Key Vault Secrets Officerがなければ[Bootstrap](platform-and-operations.md#bootstrap)のsecret投入ができず、CosmosとStorageのdata-plane roleがなければ[ローカル開発](platform-and-operations.md#ローカル開発)とliveゲートでの状態確認ができない。role assignmentの作成自体にOwnerまたはRBAC Administratorが要るため、これらは実行者が自分で付与できる権限を明示化したものであり、権限の拡大ではない。範囲はFunction App MIと同じcontainer scopeに揃え、Storageは実行者だけContributorにする。
 
 Function App MIのFoundry Userは、Sync Functionのembedding呼び出しとAgent Workerのagent呼び出しの両方に使う。Hosted Agent identityは同じFoundry projectのendpoint経由で行うmodel inferenceにimplicit accessを持つため、明示的なFoundry roleを追加しない。Foundry Project MIはproject endpointからaccountのmodel deploymentを呼ぶためFoundry Userを使う。role名とscopeの根拠は[実装開始時の現行仕様確認](research/implementation-current-spec-2026-08-11.md#rbac差分)に記録する。
 

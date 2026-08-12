@@ -41,8 +41,12 @@ Azure Resource Managerで表せる基盤はBicepを正とし、`azd provision`�
 | `infra/app/functions.bicep` | FunctionsとStorage |
 | `infra/app/data.bicep` | Cosmos DB |
 | `infra/app/foundry.bicep` | Foundry、model deployment、Hosted Agent関連基盤 |
-| `infra/app/observability.bicep` | Log Analytics、Application Insights、Budget / alert |
+| `infra/app/observability.bicep` | Log Analytics、Application Insights、Budget |
 | `infra/app/security.bicep` | Key Vaultとidentity |
+
+AVMの既定値には、個人MVPの方針と逆に振れるものがある。Cosmosの`zoneRedundant`は既定`true`、`backupPolicyType`は既定で課金対象の`Continuous30Days`、Key Vaultの`sku`は既定`premium`である。いずれも該当moduleで明示的に上書きし、理由をcommentへ残す。固定versionを上げるときは、これらの既定値が変わっていないかを合わせて確認する。
+
+resource group名は`rg-${AZURE_ENV_NAME}`に固定し、上書き用のparameterを持たない。名前を変えたいときは`azd env new`の環境名で決める。azdは未設定の環境変数を空文字へ解決するため、`AZURE_RESOURCE_GROUP`をparameterとして受け取ると変数未設定時に名前を空文字で上書きしてしまう。名前は`main.bicep`のvarで導出し、決まった値だけを`AZURE_RESOURCE_GROUP` outputからazd環境へ返す。
 
 Agent version、deploy後に判明するAgent principalへのCosmos data-plane role assignment、Responses endpoint、evaluation datasetはBicepの外にある。これらはローカルのpost-deploy scriptで扱い、Bicepで仮のendpointを作らない。
 

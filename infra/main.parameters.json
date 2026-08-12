@@ -4,7 +4,6 @@
   "parameters": {
     "environmentName": { "value": "${AZURE_ENV_NAME}" },
     "location": { "value": "${AZURE_LOCATION=japaneast}" },
-    "resourceGroupName": { "value": "${AZURE_RESOURCE_GROUP}" },
     "principalId": { "value": "${AZURE_PRINCIPAL_ID}" },
     "principalType": { "value": "${AZURE_PRINCIPAL_TYPE}" },
     "budgetContactEmail": { "value": "${AZURE_BUDGET_CONTACT_EMAIL}" },

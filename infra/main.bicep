@@ -12,9 +12,6 @@ param environmentName string
 ])
 param location string = 'japaneast'
 
-@description('Resource group created for this environment.')
-param resourceGroupName string = 'rg-${environmentName}'
-
 @description('Object ID of the person or service principal running azd.')
 @secure()
 param principalId string
@@ -29,15 +26,15 @@ param principalType string
 @secure()
 param budgetContactEmail string
 
-@description('Public GitHub repository owner; supplied through azd environment state.')
+@description('Owner of the private article GitHub repository; supplied through azd environment state.')
 @secure()
 param githubOwner string
 
-@description('Public GitHub repository name; supplied through azd environment state.')
+@description('Name of the private article GitHub repository; supplied through azd environment state.')
 @secure()
 param githubRepository string
 
-@description('Default branch of the public GitHub repository.')
+@description('Default branch of the private article GitHub repository.')
 param githubDefaultBranch string = 'main'
 
 @description('Allowed Slack workspace ID; supplied through azd environment state.')
@@ -61,6 +58,10 @@ var tags = {
   environment: 'dev'
 }
 var aiProjectDeployments = json(aiProjectDeploymentsJson)
+// Derived, not a parameter. azd resolves an unset environment variable to an empty
+// string, so accepting AZURE_RESOURCE_GROUP as a parameter would overwrite the name
+// with '' whenever the variable is not set. The name flows back out as an output.
+var resourceGroupName = 'rg-${environmentName}'
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-11-01' = {
   name: resourceGroupName
@@ -85,6 +86,8 @@ module security 'app/security.bicep' = {
   name: 'security'
   scope: rg
   params: {
+    deployerPrincipalId: principalId
+    deployerPrincipalType: principalType
     functionIdentityName: 'id-func-${token}'
     keyVaultName: 'kv-${token}'
     location: location
@@ -98,9 +101,9 @@ module data 'app/data.bicep' = {
   scope: rg
   params: {
     accountName: 'cosmos-${token}'
+    deployerPrincipalId: principalId
     functionPrincipalId: security.outputs.functionPrincipalId
     location: location
-    logAnalyticsResourceId: observability.outputs.logAnalyticsResourceId
     tags: tags
   }
 }
@@ -130,6 +133,8 @@ module functions 'app/functions.bicep' = {
     applicationInsightsConnectionString: observability.outputs.applicationInsightsConnectionString
     applicationInsightsResourceId: observability.outputs.applicationInsightsResourceId
     cosmosEndpoint: data.outputs.cosmosEndpoint
+    deployerPrincipalId: principalId
+    deployerPrincipalType: principalType
     embeddingModelDeploymentName: embeddingModelDeploymentName
     foundryProjectEndpoint: foundry.outputs.projectEndpoint
     functionAppName: 'func-${token}'
@@ -141,7 +146,6 @@ module functions 'app/functions.bicep' = {
     githubRepository: githubRepository
     keyVaultUri: security.outputs.keyVaultUri
     location: location
-    logAnalyticsResourceId: observability.outputs.logAnalyticsResourceId
     planName: 'plan-${token}'
     slackTeamId: slackTeamId
     slackUserId: slackUserId
