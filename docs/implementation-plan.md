@@ -165,6 +165,21 @@ W3C Trace Context、固定span、content保護、smoke datasetと実行script、
 
 **gate:** telemetryとevaluation scriptのcode-side gateは完了。一件のSlack質問と一件のGitHub同期をtraceで追え、10件のsmoke evaluationを実環境で実行できることを確認するliveゲートが残る。
 
+## 残りのliveゲート
+
+2026-08-12時点でStep 0〜7のcode-sideは完了し、残るのは実resourceを伴う確認だけである。順序は依存関係で決まっており飛ばせない。手順とコマンドの正本は[platform-and-operations.md](platform-and-operations.md#デプロイと復旧)、確認する中身は各Stepのgateを参照する。
+
+1. **実resource作成の許可とコスト再確認。** [開始条件](#開始条件)のとおり、`azd provision`直前にFoundryのregion、SKU、model version、TPMのcapacity / quotaと料金を確認する。ここから継続課金が始まるため、利用者の明示的な許可なしに次へ進まない。
+2. **`azd provision`。** Bicepを適用し、Key Vault、Cosmos、Functions、Foundry、observabilityを作る。
+3. **secretのbootstrap。** Key Vaultへ`slack-signing-secret`、`slack-bot-token`、`github-token`を入れる。`github-token`は記事repositoryのContents読み取りだけに絞ったfine-grained tokenとする。実値はrepositoryにも文書にもログにも残さない。
+4. **`azd deploy`。** FunctionsとHosted Agentを配る。root postdeploy hookがAgent identityへCosmos Readerを付け、Responses endpointをFunction Appの`KNOWLEDGE_AGENT_ENDPOINT`へ反映する。Agent未deployのままFunctionsだけを配って配線済みと扱わない。
+5. **Slack App bootstrap。** [Bootstrap](platform-and-operations.md#bootstrap)に従い`slack/manifest.yaml`からAppを作り、Function endpointが決まってからEvents API Request URLを登録する。
+6. **Step 4のliveゲート。** 初回、無変更の二回目、更新、削除の4ケースを実環境で追う。
+7. **Step 5と6のliveゲート。** Slackを介さずAgentを直接invokeして根拠記事付き回答を確認し、その後Slack DM、追い質問、allowlist外、再送event、poison messageを確認する。
+8. **Step 7のliveゲート。** 一件のSlack質問と一件のGitHub同期をtraceで追い、`scripts/run-smoke-evaluation.py`で10件を実行する。
+
+失敗してもrollbackせず、traceとログから原因を切り分けて修正し再deployする。
+
 ## 実装時に決める項目
 
 - Application Insightsの保持期間とsampling

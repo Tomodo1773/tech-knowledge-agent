@@ -46,7 +46,7 @@ Azure Resource Managerで表せる基盤はBicepを正とし、`azd provision`�
 
 Agent version、deploy後に判明するAgent principalへのCosmos data-plane role assignment、Responses endpoint、evaluation datasetはBicepの外にある。これらはローカルのpost-deploy scriptで扱い、Bicepで仮のendpointを作らない。
 
-deployはローカルから`azd`で行い、GitHub ActionsからはAzureへログインしない。CIは静的検査と指示ファイル同期を行い、Socket Firewall方針に適合するAVM restore経路の確定後にBicep buildも追加する。protected environmentとOIDC federated credentialはMVPでは構成しない。実resource名、principal ID、endpoint、role assignment、deployment outputは公開ログ・artifact・PR commentへ出さない。
+deployはローカルから`azd`で行い、GitHub ActionsからはAzureへログインしない。CIは静的検査、指示ファイル同期、およびAzureへログインしない`az bicep build`を行う。protected environmentとOIDC federated credentialはMVPでは構成しない。実resource名、principal ID、endpoint、role assignment、deployment outputは公開ログ・artifact・PR commentへ出さない。
 
 Application Insightsはlocal authを無効化する。Function Appにはconnection stringと`APPLICATIONINSIGHTS_AUTHENTICATION_STRING=Authorization=AAD;ClientId=<Function UAI client ID>`を設定し、UAIへApplication Insights scopeのMonitoring Metrics Publisherを付与する。Foundry projectのApp Insights connectionは現行公式sampleと同じ`2025-09-01` APIの`ProjectManagedIdentity`を使い、credential keyを保存しない。Project MIにも同scopeのMonitoring Metrics Publisherを付与し、connection stringは接続metadataとしてだけ渡す。
 
@@ -81,7 +81,9 @@ Functionsはローカルで実行し、Cosmos、Storage、Foundryは実resource�
 
 Slack eventのローカル受信には既存のCloudflare Tunnelを使い、開発中だけSlack AppのEvents API Request URLをTunnelへ向ける。Sync Functionを任意のタイミングで動かす場合はFunctionsのadmin API（`POST /admin/functions/{name}`）を使い、そのための手動同期用HTTP endpointをアプリへ追加しない。
 
-依存はuvで管理し、FunctionsとHosted Agentが必要とする`requirements.txt`は`azd`のprepackage hookで`uv export`により生成する。生成した`requirements.txt`はcommitせず、lockfileを正とする。
+依存はuvで管理し、FunctionsとHosted Agentが必要とする`requirements.txt`は`azd`のprepackage hookで`uv export`により生成する。生成した`requirements.txt`はcommitせず、lockfileを正とする。依存の取得・更新は必ずSocket Firewall経由の`sfw uv lock` / `sfw uv sync`で行う。
+
+Azureへ接続せずに再現できるローカル検証の一式は[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)が実行するものと同じで、依存同期、両projectのruffとpytest、`uv export`、package root検査、`az bicep build`、repository / infra policy検査からなる。変更を加えたら、commit前にこの一式を通す。
 
 ## デプロイと復旧
 
