@@ -182,11 +182,17 @@ def test_agent_client_sends_previous_response_id_only_when_continuing() -> None:
     client = FakeOpenAI(FakeResponse("resp_1", "Answer"))
     agent = HostedAgentClient(client)
 
+    # extra_headers carries the trace context; it is empty here because no span is active
+    # and asserted against a real span in test_telemetry.py.
     assert agent.ask("Q", previous_response_id=None) == AgentAnswer("resp_1", "Answer")
-    assert client.responses.requests[0] == {"input": "Q"}
+    assert client.responses.requests[0] == {"input": "Q", "extra_headers": {}}
 
     agent.ask("Q2", previous_response_id="resp_1")
-    assert client.responses.requests[1] == {"input": "Q2", "previous_response_id": "resp_1"}
+    assert client.responses.requests[1] == {
+        "input": "Q2",
+        "previous_response_id": "resp_1",
+        "extra_headers": {},
+    }
 
 
 def test_agent_client_rejects_unusable_responses_and_sanitizes_failures() -> None:

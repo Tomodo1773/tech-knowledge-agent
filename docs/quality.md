@@ -10,6 +10,8 @@ Functionsは`host.json`の`telemetryMode: OpenTelemetry`とPython workerのOTel�
 
 Slack質問は複数プロセスにまたがるため、一つの論理traceとして追跡する。HTTPはW3C Trace Contextを使い、Queue messageのtelemetry metadataへ`traceparent`と任意の`tracestate`を置き、workerでextractしてconsumer spanを始める。Slackの`eventId`は業務上の重複排除キーとend-to-endのcorrelation IDを兼ね、別fieldを追加しない。ユーザー情報・秘密情報をbaggageへ入れない。GitHub同期は単一Function実行で完結するため、propagationを跨ぐ必要はない。
 
+workerからHosted Agentを呼ぶHTTPだけは`extra_headers`で`traceparent`を明示的に載せる。OpenAI clientはhttpxを使い、Azure Monitor distroはhttpxを自動計装しないため、放置するとheaderが出ずFoundryがAgentを別traceで開始する。Foundryはこのheaderをcontainerへ転送するので、明示するだけでAgent側のspanが`agent.invoke`にぶら下がる。
+
 | フロー | 主なspan |
 |---|---|
 | GitHub同期 | `github.sync.run`、`github.tree.fetch`、`github.contents.fetch`、`embedding.create`、`cosmos.upsert` |

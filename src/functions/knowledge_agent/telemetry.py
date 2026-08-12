@@ -83,6 +83,21 @@ def set_attributes(span: trace.Span, **attributes: Any) -> None:
         span.set_attribute(key, value)
 
 
+def trace_headers() -> dict[str, str]:
+    """W3C headers for an outgoing HTTP call that no instrumentation covers.
+
+    The OpenAI client talks over httpx, which the Azure Monitor distro does not
+    auto-instrument, so nothing injects traceparent into the Responses request and the
+    Hosted Agent starts a trace of its own. Foundry forwards this header into the
+    container, so sending it explicitly is what joins the Agent's spans to the Slack
+    request's trace. Empty when no span is active, which the client passes through
+    unchanged.
+    """
+    carrier: dict[str, str] = {}
+    _PROPAGATOR.inject(carrier)
+    return carrier
+
+
 def current_trace_context() -> TraceContext | None:
     """Return the active context in the shape the Queue message contract carries."""
     carrier: dict[str, str] = {}

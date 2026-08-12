@@ -12,7 +12,12 @@ from opentelemetry.trace import SpanKind
 
 from knowledge_agent.contracts import ConversationStateEntity, QueueMessage, conversation_row_key
 from knowledge_agent.state import ConversationState, is_conversation_continuable
-from knowledge_agent.telemetry import SPAN_AGENT_INVOKE, set_attributes, traced
+from knowledge_agent.telemetry import (
+    SPAN_AGENT_INVOKE,
+    set_attributes,
+    trace_headers,
+    traced,
+)
 
 
 class AgentInvocationError(RuntimeError):
@@ -56,6 +61,9 @@ class HostedAgentClient:
             kind=SpanKind.CLIENT,
             **{"knowledge.conversation_continued": previous_response_id is not None},
         ) as span:
+            # Injected inside the span so the Agent's spans hang off agent.invoke rather
+            # than off the queue trigger.
+            request["extra_headers"] = trace_headers()
             try:
                 response = self._client.responses.create(**request)
             except Exception:

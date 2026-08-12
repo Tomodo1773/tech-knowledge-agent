@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -160,3 +161,35 @@ def test_queue_message_telemetry_carries_the_publishing_span(spans: Any) -> None
 
 def test_no_active_span_yields_no_trace_context() -> None:
     assert current_trace_context() is None
+
+
+def test_agent_request_carries_the_traceparent_of_its_own_invoke_span(spans: Any) -> None:
+    """The Agent's spans only join this trace if the request carries traceparent.
+
+    Nothing instruments the OpenAI client's httpx transport, so without the explicit
+    header Foundry starts the Hosted Agent on a trace of its own and the Agent side of a
+    Slack question lands under a separate operation.
+    """
+    from knowledge_agent.worker import HostedAgentClient
+
+    class FakeResponses:
+        def __init__(self) -> None:
+            self.requests: list[dict[str, Any]] = []
+
+        def create(self, **request: Any) -> Any:
+            self.requests.append(request)
+            return SimpleNamespace(id="resp_1", output_text="Answer")
+
+    class FakeOpenAI:
+        def __init__(self) -> None:
+            self.responses = FakeResponses()
+
+    client = FakeOpenAI()
+    HostedAgentClient(client).ask("Q", previous_response_id=None)
+
+    invoke = next(
+        span for span in spans.get_finished_spans() if span.name == SPAN_AGENT_INVOKE
+    )
+    sent = client.responses.requests[0]["extra_headers"]["traceparent"].split("-")
+    assert sent[1] == format(invoke.context.trace_id, "032x")
+    assert sent[2] == format(invoke.context.span_id, "016x")
