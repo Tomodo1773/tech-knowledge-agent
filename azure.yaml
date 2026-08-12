@@ -12,9 +12,15 @@ hooks:
       shell: pwsh
       run: |
         try {
-          $roleOutput = & ./scripts/assign-agent-roles.ps1 -SubscriptionId $env:AZURE_SUBSCRIPTION_ID -ResourceGroupName $env:AZURE_RESOURCE_GROUP -CosmosAccountName $env:COSMOS_ACCOUNT_NAME -AgentPrincipalId $env:AGENT_KNOWLEDGE_AGENT_INSTANCE_IDENTITY_PRINCIPAL_ID -ErrorAction Stop *>&1
+          # azure.ai.agents beta.9 does not inject an AGENT_KNOWLEDGE_AGENT_INSTANCE_IDENTITY_PRINCIPAL_ID
+          # environment variable into hooks (verified against the installed extension's actual
+          # postdeploy env: only ENDPOINT, NAME, PROJECT_ENDPOINT, VERSION, RESPONSES_ENDPOINT exist).
+          # `azd ai agent show --output json` is the only reliable source for the identity.
+          $agentInfo = azd ai agent show knowledge-agent --output json 2>$null | ConvertFrom-Json -ErrorAction Stop
+          $roleOutput = & ./scripts/assign-agent-roles.ps1 -SubscriptionId $env:AZURE_SUBSCRIPTION_ID -ResourceGroupName $env:AZURE_RESOURCE_GROUP -CosmosAccountName $env:COSMOS_ACCOUNT_NAME -AgentPrincipalId $agentInfo.instance_identity.principal_id -ErrorAction Stop *>&1
           $roleExitCode = $LASTEXITCODE
           $roleOutput = $null
+          $agentInfo = $null
           if ($roleExitCode -ne 0) { throw 'Role assignment failed.' }
         } catch {
           Write-Error 'Hosted Agent Cosmos role assignment failed.'
@@ -27,7 +33,11 @@ hooks:
     posix:
       shell: sh
       run: |
-        if ! pwsh -NoProfile -NonInteractive -File scripts/assign-agent-roles.ps1 -SubscriptionId "$AZURE_SUBSCRIPTION_ID" -ResourceGroupName "$AZURE_RESOURCE_GROUP" -CosmosAccountName "$COSMOS_ACCOUNT_NAME" -AgentPrincipalId "$AGENT_KNOWLEDGE_AGENT_INSTANCE_IDENTITY_PRINCIPAL_ID" >/dev/null 2>&1; then
+        if ! pwsh -NoProfile -NonInteractive -Command '
+          $ErrorActionPreference = "Stop"
+          $agentInfo = azd ai agent show knowledge-agent --output json 2>$null | ConvertFrom-Json
+          & ./scripts/assign-agent-roles.ps1 -SubscriptionId $env:AZURE_SUBSCRIPTION_ID -ResourceGroupName $env:AZURE_RESOURCE_GROUP -CosmosAccountName $env:COSMOS_ACCOUNT_NAME -AgentPrincipalId $agentInfo.instance_identity.principal_id
+        ' >/dev/null 2>&1; then
           echo 'Hosted Agent Cosmos role assignment failed.' >&2
           exit 1
         fi

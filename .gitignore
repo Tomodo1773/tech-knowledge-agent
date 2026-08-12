@@ -17,6 +17,7 @@ local.settings.json
 deployment-output*
 what-if-output*
 azure-debug*
+azd-ai-agents-*.log
 
 # Python
 __pycache__/

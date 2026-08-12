@@ -27,6 +27,10 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.21.0' = {
     // Continuous30Days tier bills for backup storage. Periodic keeps the two free copies.
     zoneRedundant: false
     backupPolicyType: 'Periodic'
+    // The container below declares a vectorEmbeddingPolicy, which the account rejects
+    // unless this capability is enabled first. It is an account-level opt-in and cannot
+    // be inferred from the container definition.
+    capabilitiesToAdd: ['EnableNoSQLVectorSearch']
     networkRestrictions: {
       networkAclBypass: 'AzureServices'
       publicNetworkAccess: 'Enabled'

@@ -66,6 +66,14 @@ module storage 'br/public:avm/res/storage/storage-account:0.33.0' = {
     allowBlobPublicAccess: false
     minimumTlsVersion: 'TLS1_2'
     publicNetworkAccess: 'Enabled'
+    // This AVM version leaves networkAcls unset, which resolves to defaultAction Deny and
+    // blocks both the Flex Consumption host and azd deploy's local zip upload. There is no
+    // VNet in this individual-dev MVP (docs/platform-and-operations.md#ローカル開発), so allow
+    // public access explicitly instead of listing IP rules.
+    networkAcls: {
+      defaultAction: 'Allow'
+      bypass: 'AzureServices'
+    }
     // No service-level diagnostic settings: the AVM 'allLogs' default records every
     // blob, queue, and table transaction, including the host's queue polling. That
     // duplicates the queue.* and cosmos.* spans and is the fastest way to exhaust the
@@ -156,6 +164,13 @@ module functionApp 'br/public:avm/res/web/site:0.24.0' = {
     keyVaultAccessIdentityResourceId: functionIdentityResourceId
     httpsOnly: true
     publicNetworkAccess: 'Enabled'
+    // This AVM version defaults siteConfig to { alwaysOn: true, ... }, and Flex
+    // Consumption rejects alwaysOn outright. The module passes siteConfig straight
+    // through, so the default has to be replaced rather than patched.
+    siteConfig: {
+      minTlsVersion: '1.2'
+      ftpsState: 'FtpsOnly'
+    }
     basicPublishingCredentialsPolicies: [
       { name: 'ftp', allow: false }
       { name: 'scm', allow: false }

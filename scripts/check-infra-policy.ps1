@@ -54,8 +54,8 @@ foreach ($block in $avmBlocks) {
 $main = Get-Content -Raw -LiteralPath (Join-Path $root 'infra/main.bicep')
 $mainLines = $main -split '\r?\n'
 for ($index = 0; $index -lt $mainLines.Count; $index++) {
-    if ($mainLines[$index] -match '^output\s+' -and ($index -eq 0 -or $mainLines[$index - 1] -ne '@secure()')) {
-        throw 'Every root deployment output must be decorated with @secure().'
+    if ($mainLines[$index] -match '^output\s+' -and ($index -gt 0 -and $mainLines[$index - 1] -eq '@secure()')) {
+        throw 'Root deployment outputs must not be @secure(): ARM never returns a secure output value after the deployment call returns, so azd cannot persist it into .azure/<env>/.env, breaking azd deploy and postdeploy hooks that read it back. None of these outputs are credentials -- real secrets go directly to Key Vault instead.'
     }
 }
 
@@ -139,7 +139,8 @@ foreach ($marker in $requiredEndpointMarkers) {
 
 $roleWiring = Get-Content -Raw -LiteralPath (Join-Path $root 'scripts/assign-agent-roles.ps1')
 $requiredRoleMarkers = @(
-    'AGENT_KNOWLEDGE_AGENT_INSTANCE_IDENTITY_PRINCIPAL_ID',
+    'azd ai agent show knowledge-agent --output json',
+    'instance_identity.principal_id',
     'COSMOS_ACCOUNT_NAME',
     'assign-agent-roles.ps1',
     '/dbs/$DatabaseName/colls/$ContainerName',

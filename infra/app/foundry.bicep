@@ -29,7 +29,7 @@ var foundryProjectManagerRoleId = subscriptionResourceId(
 )
 var logAnalyticsDataReaderRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
-  '3baa9e53-54e7-4a95-bca5-8eaae8b9c3a4'
+  '3b03c2da-16b3-4a49-8834-0f8130efdd3b'
 )
 var monitoringMetricsPublisherRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',

@@ -148,31 +148,23 @@ module functions 'app/functions.bicep' = {
   }
 }
 
-// azd and the Foundry extension consume these values locally. Marking identifiers and
-// endpoints secure keeps them out of deployment history and normal CI/log output.
-@secure()
+// azd and the Foundry extension consume these values locally by reading them back from
+// the persisted azd environment (.azure/<env>/.env) on later `azd deploy` and hook runs.
+// ARM never returns a @secure() output's value after the deployment call returns, so azd
+// cannot persist one; marking these secure silently breaks that later read instead of
+// hiding anything. None of them are credentials -- they are resource names, resource IDs,
+// and endpoint URLs. Actual secrets (GitHub token, Slack signing secret, Slack bot token)
+// never flow through Bicep outputs; they are written directly to Key Vault.
 output AZURE_RESOURCE_GROUP string = rg.name
-@secure()
 output AZURE_AI_ACCOUNT_NAME string = foundry.outputs.accountName
-@secure()
 output AZURE_AI_PROJECT_NAME string = foundry.outputs.projectName
-@secure()
 output AZURE_AI_PROJECT_ID string = foundry.outputs.projectResourceId
-@secure()
 output AZURE_AI_FOUNDRY_PROJECT_ID string = foundry.outputs.projectResourceId
-@secure()
 output AZURE_AI_PROJECT_ENDPOINT string = foundry.outputs.projectEndpoint
-@secure()
 output FOUNDRY_PROJECT_ENDPOINT string = foundry.outputs.projectEndpoint
-@secure()
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = observability.outputs.applicationInsightsConnectionString
-@secure()
 output APPLICATIONINSIGHTS_RESOURCE_ID string = observability.outputs.applicationInsightsResourceId
-@secure()
 output COSMOS_ENDPOINT string = data.outputs.cosmosEndpoint
-@secure()
 output COSMOS_ACCOUNT_NAME string = data.outputs.accountName
-@secure()
 output EMBEDDING_MODEL_DEPLOYMENT_NAME string = embeddingModelDeploymentName
-@secure()
 output SERVICE_FUNCTIONS_RESOURCE_NAME string = functions.outputs.functionAppName

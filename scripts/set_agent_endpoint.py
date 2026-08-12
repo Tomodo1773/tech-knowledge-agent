@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -78,8 +79,11 @@ def validate_subscription_id(value: str) -> str:
 
 
 def _run_az(runner: Runner, arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    # subprocess without shell=True does not apply PATHEXT, so a bare "az" never
+    # resolves to az.cmd on Windows. shutil.which does apply PATHEXT and finds it.
+    az_executable = shutil.which("az") or "az"
     return runner(
-        ["az", *arguments, "--only-show-errors"],
+        [az_executable, *arguments, "--only-show-errors"],
         capture_output=True,
         check=False,
         text=True,

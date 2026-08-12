@@ -170,7 +170,7 @@ def test_postdeploy_hook_uses_no_sync_python_on_windows_and_posix() -> None:
     endpoint_command = (
         "uv run --project src/functions --no-sync python scripts/set_agent_endpoint.py"
     )
-    principal = "AGENT_KNOWLEDGE_AGENT_INSTANCE_IDENTITY_PRINCIPAL_ID"
+    principal = "instance_identity.principal_id"
 
     assert postdeploy["windows"]["shell"] == "pwsh"
     assert postdeploy["posix"]["shell"] == "sh"
@@ -235,12 +235,18 @@ def test_postdeploy_role_failure_does_not_leak_azure_cli_output() -> None:
     leaked = "leaked-role-" + "material-123"
     with tempfile.TemporaryDirectory(prefix=".test-hook-", dir=ROOT) as temp_directory:
         fake_bin = Path(temp_directory)
+        fake_agent_json = (
+            '{"instance_identity":{"principal_id":'
+            '"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}}'
+        )
         if os.name == "nt":
             fake_az = fake_bin / "az.cmd"
             fake_az.write_text(
                 f"@echo off\necho {leaked}\necho {leaked} 1>&2\nexit /b 17\n",
                 encoding="utf-8",
             )
+            fake_azd = fake_bin / "azd.cmd"
+            fake_azd.write_text(f"@echo off\necho {fake_agent_json}\n", encoding="utf-8")
             hook_name = "windows"
             command = ["pwsh", "-NoProfile", "-NonInteractive", "-Command"]
         else:
@@ -250,6 +256,9 @@ def test_postdeploy_role_failure_does_not_leak_azure_cli_output() -> None:
                 encoding="utf-8",
             )
             fake_az.chmod(0o700)
+            fake_azd = fake_bin / "azd"
+            fake_azd.write_text(f"#!/bin/sh\necho '{fake_agent_json}'\n", encoding="utf-8")
+            fake_azd.chmod(0o700)
             hook_name = "posix"
             command = ["sh", "-c"]
         azure_yaml = yaml.safe_load((ROOT / "azure.yaml").read_text(encoding="utf-8"))
@@ -260,9 +269,6 @@ def test_postdeploy_role_failure_does_not_leak_azure_cli_output() -> None:
             "AZURE_SUBSCRIPTION_ID": VALID_SUBSCRIPTION_ID,
             "AZURE_RESOURCE_GROUP": "rg-test",
             "COSMOS_ACCOUNT_NAME": "cosmos-test",
-            "AGENT_KNOWLEDGE_AGENT_INSTANCE_IDENTITY_PRINCIPAL_ID": (
-                "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-            ),
         }
 
         completed = subprocess.run(
