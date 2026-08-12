@@ -15,7 +15,10 @@ _CONNECT_TIMEOUT_SECONDS = 5.0
 _RESPONSE_TIMEOUT_SECONDS = 30.0
 _MAX_RETRY_AFTER_SECONDS = 2.0
 _MAX_RESPONSE_BYTES = 5_000_000
-_ALLOWED_HOSTS = frozenset({"api.github.com", "raw.githubusercontent.com"})
+# The source repository is private, so every read goes through the authenticated API.
+# raw.githubusercontent.com is not reachable with a token and is deliberately absent.
+_ALLOWED_HOSTS = frozenset({"api.github.com"})
+_GITHUB_API_VERSION = "2022-11-28"
 
 _SLACK_HOST = "slack.com"
 _SLACK_MAX_RESPONSE_BYTES = 200_000
@@ -72,12 +75,18 @@ def _retry_delay(response: HttpResponse | None, attempt: int) -> float:
 
 
 class GitHubHttpTransport:
+    """Reads a private repository. The token never appears in errors or logs."""
+
     def __init__(
         self,
+        token: str,
         *,
         connection_factory: ConnectionFactory = _connection_factory,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        if not isinstance(token, str) or not token.strip():
+            raise ValueError("GitHub token must not be empty")
+        self._token = token
         self._connection_factory = connection_factory
         self._sleep = sleep
 
@@ -115,7 +124,12 @@ class GitHubHttpTransport:
                 connection.request(
                     "GET",
                     path,
-                    headers={"Accept": accept, "User-Agent": "tech-knowledge-agent"},
+                    headers={
+                        "Accept": accept,
+                        "Authorization": f"Bearer {self._token}",
+                        "User-Agent": "tech-knowledge-agent",
+                        "X-GitHub-Api-Version": _GITHUB_API_VERSION,
+                    },
                 )
                 response = connection.getresponse()
                 retryable = response.status == 429 or 500 <= response.status < 600
@@ -153,7 +167,8 @@ class GitHubHttpTransport:
             raise RemoteRequestError("GitHub response was not valid JSON") from None
 
     def get_text(self, url: str) -> str:
-        content = self._get(url, accept="text/plain")
+        """Fetch a blob body. The raw media type returns content, not the JSON envelope."""
+        content = self._get(url, accept="application/vnd.github.raw")
         try:
             return content.decode("utf-8")
         except UnicodeDecodeError:

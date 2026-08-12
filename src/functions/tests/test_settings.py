@@ -11,6 +11,7 @@ from knowledge_agent.settings import (
 
 # Split so the repository policy scan does not read these fixtures as real endpoints.
 _FOUNDRY_HOST = "https://example." "services.ai.azure.com"
+_GITHUB_TOKEN = "github_pat_" + "0" * 22 + "_" + "1" * 59
 _AGENT_ENDPOINT = (
     f"{_FOUNDRY_HOST}/api/projects/dev/agents/knowledge-agent"
     "/endpoint/protocols/openai/responses?api-version=v1"
@@ -28,6 +29,7 @@ def _environment() -> dict[str, str]:
         "GITHUB_OWNER": "example-owner",
         "GITHUB_REPOSITORY": "example.repository",
         "GITHUB_DEFAULT_BRANCH": "main",
+        "GITHUB_TOKEN": _GITHUB_TOKEN,
         "CHUNKING_VERSION": "markdown-v1-1600-200",
     }
 
@@ -37,6 +39,21 @@ def test_sync_settings_validate_and_normalize_endpoints() -> None:
 
     assert settings.cosmos_endpoint == "https://example." "documents.azure.com:443"
     assert settings.foundry_project_endpoint.endswith("/api/projects/dev")
+    # The source repository is private, so the token is required and must stay hidden.
+    assert settings.github_token == _GITHUB_TOKEN
+    assert _GITHUB_TOKEN not in repr(settings)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["", "   ", "not-a-token", "ghp_short", "github_pat_short"],
+)
+def test_sync_settings_reject_a_value_that_is_not_a_github_token(value: str) -> None:
+    environment = _environment()
+    environment["GITHUB_TOKEN"] = value
+
+    with pytest.raises(SettingsError, match="GITHUB_TOKEN"):
+        SyncSettings.from_environment(environment)
 
 
 @pytest.mark.parametrize(

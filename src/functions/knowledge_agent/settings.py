@@ -23,6 +23,9 @@ _AGENT_RESPONSES_PATH = re.compile(
     r"^/api/projects/[^/]+/agents/[^/]+/endpoint/protocols/openai/responses/?$"
 )
 _SLACK_BOT_TOKEN_PATTERN = re.compile(r"^xoxb-[A-Za-z0-9-]{10,}$")
+# Fine-grained and classic personal access tokens. The repository is private, so the
+# sync cannot fall back to anonymous reads.
+_GITHUB_TOKEN_PATTERN = re.compile(r"^(github_pat_[A-Za-z0-9_]{30,255}|ghp_[A-Za-z0-9]{36,255})$")
 
 
 class SettingsError(ValueError):
@@ -75,15 +78,19 @@ class SyncSettings:
     github_repository: str
     github_default_branch: str
     chunking_version: str
+    github_token: str = field(repr=False)
 
     @classmethod
     def from_environment(cls, environment: Mapping[str, str]) -> SyncSettings:
         owner = _required(environment, SettingName.GITHUB_OWNER)
         repository = _required(environment, SettingName.GITHUB_REPOSITORY)
+        token = _required(environment, SettingName.GITHUB_TOKEN)
         if not _GITHUB_IDENTIFIER_PATTERN.fullmatch(owner):
             raise SettingsError("GITHUB_OWNER is invalid")
         if not _GITHUB_IDENTIFIER_PATTERN.fullmatch(repository):
             raise SettingsError("GITHUB_REPOSITORY is invalid")
+        if not _GITHUB_TOKEN_PATTERN.fullmatch(token):
+            raise SettingsError("GITHUB_TOKEN is not a personal access token")
         return cls(
             storage_account_name=_storage_account(environment),
             cosmos_endpoint=_https_endpoint(
@@ -105,6 +112,7 @@ class SyncSettings:
             github_repository=repository,
             github_default_branch=_required(environment, SettingName.GITHUB_DEFAULT_BRANCH),
             chunking_version=_required(environment, SettingName.CHUNKING_VERSION),
+            github_token=token,
         )
 
 

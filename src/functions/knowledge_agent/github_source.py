@@ -69,7 +69,7 @@ class GitTreeEntry:
 
 
 class GitHubSourceClient:
-    """Build unauthenticated GitHub requests while keeping transport injectable."""
+    """Build authenticated GitHub API requests while keeping transport injectable."""
 
     def __init__(
         self,
@@ -139,11 +139,13 @@ class GitHubSourceClient:
         return tuple(sorted(entries, key=lambda entry: entry.path))
 
     def fetch_markdown(self, entry: GitTreeEntry, revision: str) -> str:
-        revision = _require_git_sha(revision, "revision")
-        path = quote(entry.path, safe="/")
+        # The blob SHA already identifies the exact content the tree listed, so the
+        # revision only has to be well formed. Private repositories are not readable
+        # through raw.githubusercontent.com, so this goes through the Git blobs API.
+        _require_git_sha(revision, "revision")
         url = (
-            f"https://raw.githubusercontent.com/{self._owner}/{self._repository}"
-            f"/{revision}/{path}"
+            f"https://api.github.com/repos/{self._owner}/{self._repository}"
+            f"/git/blobs/{entry.blob_sha}"
         )
         with traced(SPAN_CONTENTS_FETCH, kind=SpanKind.CLIENT):
             content = self._transport.get_text(url)

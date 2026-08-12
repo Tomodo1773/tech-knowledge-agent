@@ -4,7 +4,7 @@ Azure AI関連スタックを学びながら、自分の技術ブログをSlack�
 
 ## MVPで提供すること
 
-- 公開GitHub repositoryのdefault branchにある`articles/**/*.md`を同期し、ベクトル検索できるようにする
+- 非公開GitHub repositoryのdefault branchにある`articles/**/*.md`を同期し、ベクトル検索できるようにする
 - Timer Functionが日次でcommit SHAとblob SHAを確認し、変更のあった記事だけを再indexする
 - Slack AppとのDMで質問を受け、検索根拠へのリンク付きでスレッド返信する。同じスレッドの直前の会話を踏まえた追い質問に答えられる
 - 処理状況と失敗を追跡できる最低限のトレースと約10件のsmoke evaluationを持つ
@@ -13,7 +13,7 @@ Azure AI関連スタックを学びながら、自分の技術ブログをSlack�
 
 ## 実装状況
 
-実装計画Step 0〜3とStep 4のoffline sliceは完了した。日次Timer、匿名GitHub取得、chunk / embedding、Cosmos記事置換、Table同期状態までをmock integration testで確認済みである。Step 5はHosted Agent、`knowledge_search`、Managed Identity SDK adapter、postdeploy RBAC / endpoint配線のoffline実装まで進んだが、Agent dependency lockと実Foundry / Cosmos疎通は未完了である。Azure resourceはまだ作成していない。
+実装計画Step 0〜7のcode-sideは完了した。日次Timerによる認証付きGitHub取得、chunk / embedding、Cosmos記事置換、Table同期状態、Slack受信からAgent応答までの結線、telemetryとsmoke evaluationまでをunit / mock integration testで確認済みである。残るのは実resource作成の許可、`azd provision` / `azd deploy`、Slack AppとKey Vaultのbootstrap、実環境での疎通・trace・smoke確認である。Azure resourceはまだ作成していない。
 
 ## 最小構成
 
@@ -39,7 +39,7 @@ flowchart LR
 - 差分判定はGit Trees APIのblob SHAで行い、content hashを自前で計算しない。
 - 会話履歴はHosted AgentのResponses protocolが管理し、Workerは`previous_response_id`で会話をつなぐ。Agent内部のmodel callは`store: false`とする。
 - Slackは単一workspace・単一利用者・DMだけを対象とし、トップレベルメッセージを会話の起点、スレッド内メッセージを追い質問として扱う。
-- 公開GitHub repositoryは認証なしのGitHub APIで読み、Azure内の接続はManaged Identityを使う。
+- 記事repositoryはKey Vault由来のGitHub tokenで認証したGitHub APIで読み、Azure内の接続はManaged Identityを使う。
 - 個人MVPなので、deployはローカルの`azd`から行い、deploy後の確認は一度の疎通確認に限定する。
 - コスト方針とAzure Budgetは[プラットフォームと運用](docs/platform-and-operations.md#コストと日常運用)を正とする。
 

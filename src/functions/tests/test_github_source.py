@@ -26,7 +26,8 @@ class FakeTransport:
 def test_fetches_head_filtered_tree_and_revision_fixed_content() -> None:
     commit_url = "https://api.github.com/repos/acme/blog/commits/main"
     tree_url = f"https://api.github.com/repos/acme/blog/git/trees/{REVISION}?recursive=1"
-    content_url = f"https://raw.githubusercontent.com/acme/blog/{REVISION}/articles/azure.md"
+    # Private repositories are read through the blobs API, keyed by the tree blob SHA.
+    content_url = f"https://api.github.com/repos/acme/blog/git/blobs/{REVISION}"
     transport = FakeTransport(
         {
             commit_url: {"sha": REVISION},

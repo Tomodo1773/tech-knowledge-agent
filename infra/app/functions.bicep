@@ -195,6 +195,7 @@ module functionApp 'br/public:avm/res/web/site:0.24.0' = {
           GITHUB_OWNER: githubOwner
           GITHUB_REPOSITORY: githubRepository
           GITHUB_DEFAULT_BRANCH: githubDefaultBranch
+          GITHUB_TOKEN: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/github-token/)'
           SLACK_ALLOWED_TEAM_ID: slackTeamId
           SLACK_ALLOWED_USER_ID: slackUserId
           SLACK_SIGNING_SECRET: '@Microsoft.KeyVault(SecretUri=${keyVaultUri}secrets/slack-signing-secret/)'

@@ -10,7 +10,7 @@ Sync Function（Timer Trigger）、Slack Events Function（HTTP Trigger）、Age
 
 Sync FunctionはTimer Triggerで毎日18:00 UTC（JST 03:00）に起動し、`run_on_startup=false`とする。past-due起動も省略せず通常と同じ全件reconcileを行い、同期を一つの実行で完結させる。同期用のQueue、job table、leaseは持たない。
 
-1. 公開GitHub repositoryのdefault branchのcommit SHAを認証なしのGitHub APIで確認する。最終同期済みSHAと同じ場合もtreeと保存済みarticle manifestを照合し、path、blob SHA、chunking version、削除候補まで完全一致したときだけ何もせず終了する。`sourceRevision`はcommit固定URLの参照先であり差分keyには使わないため、無関係なcommitで全記事を再embeddingしない。
+1. 非公開GitHub repositoryのdefault branchのcommit SHAを、Key Vault由来のtokenで認証したGitHub APIで確認する。最終同期済みSHAと同じ場合もtreeと保存済みarticle manifestを照合し、path、blob SHA、chunking version、削除候補まで完全一致したときだけ何もせず終了する。`sourceRevision`はcommit固定URLの参照先であり差分keyには使わないため、無関係なcommitで全記事を再embeddingしない。
 2. Git Trees APIを`recursive=1`で一度呼び、`articles/**/*.md`のpathとblob SHAの一覧を得る。
 3. Cosmosから各記事の全chunk manifestを取得し、`id`、`sourcePath`、`sourceRevision`、`sourceBlobSha`、`chunkingVersion`が記事内で一貫し、`chunkIndex`が0からの重複なし連番であることと件数を検査してからtree側と突き合わせる。不整合は前回の複数batch書込みが途中で止まった状態として`needs_reindex`にし、先頭chunkだけで正常と判定しない。
 4. 追加された記事、blob SHAが変わった記事、`chunkingVersion`が現行と異なる記事だけを再indexする。tree側に存在しない記事のchunkは削除する。
@@ -60,7 +60,9 @@ MarkdownはCRLF / CRをLFへ正規化し、空本文を拒否する。chunkはUn
 
 画像参照は本文に残すが、MVPではOCR・画像本文indexを行わない。`images/**`の変更はblob SHA比較の対象外なので、再indexを誘発しない。
 
-同期対象は公開repositoryとし、GitHub credentialを持たない。owner、repository、default branchはdeploy時の非機密設定として与え、実値をこの文書へ記録しない。
+同期対象は非公開repositoryとする。記事本文は公開しても問題ない内容だが、commit履歴には執筆過程が残るため、source repository自体は公開しない。読み取りにはKey Vaultへ置いたGitHub personal access tokenを使い、Function App MIがKey Vault参照で解決する。tokenはrepositoryのContents読み取りだけに絞ったfine-grained tokenを想定し、期限切れ時はKey Vaultのsecretを差し替える。owner、repository、default branchはdeploy時の非機密設定として与え、実値をこの文書へ記録しない。
+
+非公開repositoryは`raw.githubusercontent.com`からtokenで読めないため、記事本文はGit Blobs APIの`application/vnd.github.raw`で取得する。取得対象はtreeが返したblob SHAで content-addressed に決まるので、path encodingとrevisionの二重解決を持たない。citationの`sourceUrl`は従来どおりcommit固定のGitHub blob URLで、閲覧できるのはrepositoryへaccessできる本人だけである。
 
 ## 状態とメッセージ契約
 

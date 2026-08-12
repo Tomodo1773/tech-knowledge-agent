@@ -84,20 +84,33 @@ def test_retries_retryable_status_and_caps_retry_after() -> None:
         ]
     )
     sleeps: list[float] = []
-    transport = GitHubHttpTransport(connection_factory=factory, sleep=sleeps.append)  # type: ignore[arg-type]
+    transport = GitHubHttpTransport(
+        "ghp_secret_token",
+        connection_factory=factory,  # type: ignore[arg-type]
+        sleep=sleeps.append,
+    )
 
     assert transport.get_json("https://api.github.com/repos/example?value=1") == {"sha": "ok"}
     assert sleeps == [2.0, 0.5]
     assert all(connection.closed for connection in connections)
     assert connections[-1].sock.timeouts == [30.0]
     assert connections[-1].requests[0][1] == "/repos/example?value=1"
+    # The private repository is only readable with the token on every attempt.
+    assert all(
+        connection.requests[0][2]["Authorization"] == "Bearer ghp_secret_token"
+        for connection in connections
+    )
 
 
 def test_retries_timeout_three_times_with_sanitized_error() -> None:
     factory, connections = _factory(
         [TimeoutError("secret-one"), TimeoutError("secret-two"), TimeoutError("secret-three")]
     )
-    transport = GitHubHttpTransport(connection_factory=factory, sleep=lambda _: None)  # type: ignore[arg-type]
+    transport = GitHubHttpTransport(
+        "ghp_secret_token",
+        connection_factory=factory,  # type: ignore[arg-type]
+        sleep=lambda _: None,
+    )
 
     with pytest.raises(RemoteRequestError, match="timed out") as captured:
         transport.get_text("https://api.github.com/private-owner")
@@ -109,6 +122,7 @@ def test_retries_timeout_three_times_with_sanitized_error() -> None:
 def test_does_not_retry_non_retryable_status_or_network_error() -> None:
     status_factory, status_connections = _factory([FakeResponse(404, b"secret response")])
     status_transport = GitHubHttpTransport(
+        "ghp_secret_token",
         connection_factory=status_factory,  # type: ignore[arg-type]
         sleep=lambda _: None,
     )
@@ -117,9 +131,11 @@ def test_does_not_retry_non_retryable_status_or_network_error() -> None:
     assert len(status_connections) == 1
     assert "private-owner" not in str(captured.value)
     assert "secret response" not in str(captured.value)
+    assert "ghp_secret_token" not in str(captured.value)
 
     network_factory, network_connections = _factory([OSError("sensitive-host")])
     network_transport = GitHubHttpTransport(
+        "ghp_secret_token",
         connection_factory=network_factory,  # type: ignore[arg-type]
         sleep=lambda _: None,
     )

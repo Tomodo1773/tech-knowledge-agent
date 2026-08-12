@@ -25,7 +25,7 @@ Function AppとHosted Agentは依存とdeploy単位が異なるため、別のuv
 | `src/functions/function_app.py`、`src/functions/host.json` | Sync、Slack Events、Agent Workerのtrigger登録とFunction App共通設定 |
 | `src/functions/knowledge_agent/contracts.py` | Queue、Table、Cosmos、設定名の共有契約 |
 | `src/functions/knowledge_agent/sync.py`、`github_source.py`、`chunking.py` | GitHub同期と外部接続を持たない変換処理 |
-| `src/functions/knowledge_agent/settings.py`、`http_transport.py`、`azure_adapters.py`、`sync_function.py`、`sync_runtime.py` | 同期設定、匿名GitHub HTTP、Azure SDK adapter、Timer handlerと遅延runtime結線 |
+| `src/functions/knowledge_agent/settings.py`、`http_transport.py`、`azure_adapters.py`、`sync_function.py`、`sync_runtime.py` | 同期設定、認証付きGitHub HTTP、Azure SDK adapter、Timer handlerと遅延runtime結線 |
 | `src/functions/knowledge_agent/state.py`、`slack_events.py`、`worker.py`、`slack_runtime.py`、`telemetry.py` | 状態、Slack受信・応答、Agent呼び出し、Slack/Worker用の遅延runtime結線、観測 |
 | `src/functions/pyproject.toml`、`src/functions/uv.lock` | Function Appの依存とtool設定 |
 | `src/functions/tests/` | Azureへ接続しないFunction Appのunit test |
@@ -127,11 +127,13 @@ Hosted Agent / `azd`、Azure IaC / RBAC / capacity、Functions / Slackの3観点
 
 先に実resourceへ接続しないAzure adapterとmock integration testを実装する。実resource作成の許可、capacity、料金を再確認してから`azd provision`し、一記事の取得、chunk、embedding、Cosmos upsert、Table state更新を通す。その後、同じSHAで再embeddingしないことと、更新・削除のreconcileを確認する。
 
-**進捗:** 2026-08-11に実resourceへ接続しないcode-side sliceを完了した。毎日18:00 UTC（JST 03:00）のTimer、匿名GitHub HTTP、Foundry embedding、Cosmos記事置換、Table sync stateをManaged IdentityのSDK clientへ結線した。clientはDI可能で、GitHubとAzure SDKのtimeout / retryを固定し、secretやendpointをerrorへ含めない。Cosmosは記事の全chunk manifestを検査し、小記事のupsert / stale deleteを単一transactional batchへまとめる。大記事だけを100 operations / 保守的1.8 MiBで分割し、途中状態を`needs_reindex`として次回に記事全体reindexする。`success|partial|failed`のstate遷移、無変更・差分・新規/既存不正・batch境界・途中manifestをmock integration testで確認済みである。Azure SDKの正確なversionはFunctionsの`uv.lock`へ固定した。実Azure / GitHub通信、resource作成、capacity / 料金確認は行っていない。
+**進捗:** 2026-08-11に実resourceへ接続しないcode-side sliceを完了した。毎日18:00 UTC（JST 03:00）のTimer、GitHub HTTP、Foundry embedding、Cosmos記事置換、Table sync stateをManaged IdentityのSDK clientへ結線した。clientはDI可能で、GitHubとAzure SDKのtimeout / retryを固定し、secretやendpointをerrorへ含めない。Cosmosは記事の全chunk manifestを検査し、小記事のupsert / stale deleteを単一transactional batchへまとめる。大記事だけを100 operations / 保守的1.8 MiBで分割し、途中状態を`needs_reindex`として次回に記事全体reindexする。`success|partial|failed`のstate遷移、無変更・差分・新規/既存不正・batch境界・途中manifestをmock integration testで確認済みである。Azure SDKの正確なversionはFunctionsの`uv.lock`へ固定した。実Azure / GitHub通信、resource作成、capacity / 料金確認は行っていない。
 
 外部resourceと永続状態を共有するため、このstepは直列で行う。
 
-**gate:** code-sideのunit / mock integration gateは完了。実resource作成の許可、capacity / 料金再確認、AVM restore / Bicep build、provision後に、初回、無変更二回目、更新、削除の4ケースを実環境で追跡するlive gateが残る。
+2026-08-12に、同期対象repositoryが非公開である実態に合わせて取得経路を認証付きへ戻した。commit SHAとtreeはKey Vault由来のGitHub tokenで認証したGitHub APIから取得し、記事本文は`raw.githubusercontent.com`ではなくGit Blobs APIの`application/vnd.github.raw`から、treeが返したblob SHAで取得する。tokenは設定の`repr`にもerrorにも出ず、許可hostは`api.github.com`だけに絞った。
+
+**gate:** code-sideのunit / mock integration gateは完了。実resource作成の許可、capacity / 料金再確認、Key VaultへのGitHub token投入、provision後に、初回、無変更二回目、更新、削除の4ケースを実環境で追跡するlive gateが残る。
 
 ### 5. Hosted Agent vertical slice
 
@@ -147,7 +149,7 @@ Hosted Agent / `azd`、Azure IaC / RBAC / capacity、Functions / Slackの3観点
 
 Slack Events Function、Queue、Agent Worker、conversation state、`eyes` reaction、thread返信を接続する。Request URLのbootstrap後、トップレベルDM一件と追い質問一件を通し、allowlist外、再送event、poison messageも確認する。
 
-**進捗:** 2026-08-12に実resourceへ接続しないcode-side sliceを完了した。匿名HTTP trigger、`slack-questions` Queue trigger、Table event claim、conversation state、Slack Web API、Hosted Agent呼び出しを結線した。event重複はInsert Entityの成否だけを排他とし、allowlist外とDM以外は`unauthorized_source` / `unsupported_conversation_type`の監査記録を残して2xxを返す。Hosted Agentは`KNOWLEDGE_AGENT_ENDPOINT`を`AzureOpenAI`の`base_url`へ渡し、Managed Identity tokenを`azure_ad_token_provider`で更新する。`previous_response_id`は7日以内の参照だけを使い、Agent応答→conversation state保存→thread返信の順にして再試行で二重投稿しないようにした。Slack App manifest templateとQueueのbase64 encodingも固定した。Signing SecretとBot tokenは設定の`repr`にもerrorにも出ない。実Slack / Azure通信とdeployは行っていない。
+**進捗:** 2026-08-12に実resourceへ接続しないcode-side sliceを完了した。認証なしで公開するHTTP trigger、`slack-questions` Queue trigger、Table event claim、conversation state、Slack Web API、Hosted Agent呼び出しを結線した。event重複はInsert Entityの成否だけを排他とし、allowlist外とDM以外は`unauthorized_source` / `unsupported_conversation_type`の監査記録を残して2xxを返す。Hosted Agentは`KNOWLEDGE_AGENT_ENDPOINT`を`AzureOpenAI`の`base_url`へ渡し、Managed Identity tokenを`azure_ad_token_provider`で更新する。`previous_response_id`は7日以内の参照だけを使い、Agent応答→conversation state保存→thread返信の順にして再試行で二重投稿しないようにした。Slack App manifest templateとQueueのbase64 encodingも固定した。Signing SecretとBot tokenは設定の`repr`にもerrorにも出ない。実Slack / Azure通信とdeployは行っていない。
 
 `eyes`は質問メッセージ自身へ付ける必要があるため、Queue message契約へ`messageTs`を追加し[architecture.md](architecture.md#状態とメッセージ契約)とfixtureを更新した。
 
@@ -167,7 +169,7 @@ W3C Trace Context、固定span、content保護、smoke datasetと実行script、
 
 - Application Insightsの保持期間とsampling
 - smoke evaluationのbaseline後の改善優先度
-- 同期対象repositoryを公開にするか、認証付き取得へ設計を戻すか（[architecture.md](architecture.md#データソース契約)は公開前提のまま）
+- GitHub tokenの有効期限と、失効時にKey Vaultのsecretを差し替える頻度
 - Foundryが`responseId`を保持する期間の実測値と、会話継続の上限7日をそれに収める調整
 
 ## MVP完了条件

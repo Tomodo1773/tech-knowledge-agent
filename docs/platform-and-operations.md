@@ -27,7 +27,7 @@ Functionsはalways-ready 0で始める。Slack Events APIはコールドスタ�
 
 MVPでは個人利用・dev一環境を前提とする。自動fallbackやrollback機構は作らず、Queue滞留・poison message、Function/Agentエラー、同期停止、予算超過を必要に応じて確認する。監視項目の詳細は[quality.md](quality.md)を参照する。
 
-GitHub同期は毎日18:00 UTC（JST 03:00）に実行する。匿名GitHub GETは接続5秒・応答30秒、最大3 attemptとし、429、5xx、timeoutだけをbounded backoffで再試行する。`Retry-After`も2秒を上限にする。Azure SDK clientはDefaultAzureCredentialによるFunction App Managed Identityを共有する。Table / Cosmos / project clientは接続5秒・応答30秒・SDK retry 2回、embeddingのOpenAI clientは全体30秒・retry 2回を初期値とする。実測でGitHub rate limitや大きな記事取得に支障がある場合だけ変更する。
+GitHub同期は毎日18:00 UTC（JST 03:00）に実行する。GitHub APIのGETは接続5秒・応答30秒、最大3 attemptとし、429、5xx、timeoutだけをbounded backoffで再試行する。`Retry-After`も2秒を上限にする。Azure SDK clientはDefaultAzureCredentialによるFunction App Managed Identityを共有する。Table / Cosmos / project clientは接続5秒・応答30秒・SDK retry 2回、embeddingのOpenAI clientは全体30秒・retry 2回を初期値とする。実測でGitHub rate limitや大きな記事取得に支障がある場合だけ変更する。
 
 ## IaCと配送
 
@@ -54,7 +54,7 @@ Hosted Agentは評価と障害解析のため`OTEL_INSTRUMENTATION_GENAI_CAPTURE
 
 ## Bootstrap
 
-初回bootstrapで、Slack Appをmanifest templateから自分のworkspaceへ作成・installし、App HomeのMessages tab、Bot Token Scopeの`im:history`、`chat:write`、`reactions:write`、`message.im` event subscriptionを設定する。`reactions:write`は受付を示す`eyes` reactionに使う。App Homeは`messages_tab_enabled: true`だけでなく`messages_tab_read_only_enabled: false`も必要で、これを省くとMessages tabに入力欄が出ずDMを送れない。Function endpointの作成後にEvents API Request URLを登録し、Slack Signing SecretとBot tokenをKey Vaultへ保存する。Request URLの登録時にSlackが`url_verification`を送るため、Events Functionは先にdeployしておく。公開GitHub repositoryのowner、repository、default branch、および応答を許可するSlack `team_id`と`user`のallowlistはdeploy時の設定として与える。実値を文書やログへ残さず、Bicepにはsecret名と参照だけを置く。複数workspace向けOAuth、Slack Marketplace公開は構成しない。Slack Agent機能を採用しない理由は次節に記す。
+初回bootstrapで、Slack Appをmanifest templateから自分のworkspaceへ作成・installし、App HomeのMessages tab、Bot Token Scopeの`im:history`、`chat:write`、`reactions:write`、`message.im` event subscriptionを設定する。`reactions:write`は受付を示す`eyes` reactionに使う。App Homeは`messages_tab_enabled: true`だけでなく`messages_tab_read_only_enabled: false`も必要で、これを省くとMessages tabに入力欄が出ずDMを送れない。Function endpointの作成後にEvents API Request URLを登録し、Slack Signing SecretとBot token、および記事repositoryを読むGitHub tokenをKey Vaultへ保存する。GitHub tokenは対象repositoryのContents読み取りだけに絞ったfine-grained tokenとし、期限が切れたらsecretを差し替える。Request URLの登録時にSlackが`url_verification`を送るため、Events Functionは先にdeployしておく。記事repositoryのowner、repository、default branch、および応答を許可するSlack `team_id`と`user`のallowlistはdeploy時の設定として与える。実値を文書やログへ残さず、Bicepにはsecret名と参照だけを置く。複数workspace向けOAuth、Slack Marketplace公開は構成しない。Slack Agent機能を採用しない理由は次節に記す。
 
 ## Slack Agent機能を採用しない理由
 

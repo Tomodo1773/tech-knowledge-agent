@@ -74,7 +74,7 @@ def build_sync_runtime() -> SyncRuntime:
             settings.github_owner,
             settings.github_repository,
             settings.github_default_branch,
-            GitHubHttpTransport(),
+            GitHubHttpTransport(settings.github_token),
         ),
         index=CosmosIndexRepository(container),
         embedder=FoundryEmbeddingProvider(openai_client, settings.embedding_deployment_name),

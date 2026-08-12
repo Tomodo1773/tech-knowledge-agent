@@ -23,6 +23,7 @@ def test_runtime_wires_one_managed_identity_to_bounded_sdk_clients(
         "GITHUB_OWNER": "example-owner",
         "GITHUB_REPOSITORY": "example-repository",
         "GITHUB_DEFAULT_BRANCH": "main",
+        "GITHUB_TOKEN": "github_pat_" + "0" * 22 + "_" + "1" * 59,
         "CHUNKING_VERSION": "markdown-v1-1600-200",
     }
     for name, value in environment.items():
