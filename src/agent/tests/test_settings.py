@@ -22,6 +22,16 @@ def test_reads_separate_chat_and_embedding_deployments() -> None:
     assert settings.embedding_deployment_name == "embedding-model"
 
 
+def test_accepts_the_explicit_443_port_cosmos_actually_returns() -> None:
+    # COSMOS_ENDPOINT comes from the Bicep output, which is the account's real endpoint
+    # and always carries :443. Rejecting it kept the container from ever starting.
+    environment = {**VALID, "COSMOS_ENDPOINT": f"https://{COSMOS_TEST_HOST}:443/"}
+
+    settings = AgentSettings.from_environment(environment)
+
+    assert settings.cosmos_endpoint == f"https://{COSMOS_TEST_HOST}:443/"
+
+
 @pytest.mark.parametrize(
     ("name", "value"),
     [
@@ -31,6 +41,8 @@ def test_reads_separate_chat_and_embedding_deployments() -> None:
         ),
         ("FOUNDRY_PROJECT_ENDPOINT", "https://example.test/api/projects/x"),
         ("COSMOS_ENDPOINT", f"https://{COSMOS_TEST_HOST}/dbs/knowledge"),
+        ("COSMOS_ENDPOINT", f"https://{COSMOS_TEST_HOST}:8081/"),
+        ("FOUNDRY_PROJECT_ENDPOINT", f"https://{FOUNDRY_TEST_HOST}:8443/api/projects/x"),
         ("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "false"),
     ],
 )

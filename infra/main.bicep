@@ -47,6 +47,9 @@ param aiProjectDeploymentsJson string = '[]'
 @description('Embedding deployment name shared by Functions and the Hosted Agent.')
 param embeddingModelDeploymentName string = 'text-embedding-3-small'
 
+@description('Chat deployment name the Hosted Agent reasons with. Must match a deployment name in azure.yaml.')
+param chatModelDeploymentName string = 'gpt-5.6-luna'
+
 var token = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = {
   'azd-env-name': environmentName
@@ -167,4 +170,5 @@ output APPLICATIONINSIGHTS_RESOURCE_ID string = observability.outputs.applicatio
 output COSMOS_ENDPOINT string = data.outputs.cosmosEndpoint
 output COSMOS_ACCOUNT_NAME string = data.outputs.accountName
 output EMBEDDING_MODEL_DEPLOYMENT_NAME string = embeddingModelDeploymentName
+output AZURE_AI_MODEL_DEPLOYMENT_NAME string = chatModelDeploymentName
 output SERVICE_FUNCTIONS_RESOURCE_NAME string = functions.outputs.functionAppName

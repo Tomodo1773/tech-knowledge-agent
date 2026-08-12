@@ -27,7 +27,9 @@ def _https_endpoint(value: str, *, suffix: str, project_path: bool) -> str:
         or not parsed.hostname.endswith(suffix)
         or parsed.username is not None
         or parsed.password is not None
-        or parsed.port is not None
+        # Cosmos hands out its endpoint with an explicit :443, so rejecting every port
+        # rejects the real value. Only a non-HTTPS port is a redirection attempt.
+        or parsed.port not in (None, 443)
         or parsed.query
         or parsed.fragment
         or not valid_path

@@ -84,6 +84,20 @@ if (
     throw 'The embedding deployment must flow into the azd environment.'
 }
 
+# azd resolves an unset environment variable to an empty string, so an azure.yaml
+# ${VAR} with no supplier silently ships an empty value to the Agent container and only
+# surfaces as session_not_ready at invoke time. Every variable the Agent service reads
+# must therefore have a matching root output that populates the azd environment.
+$agentVariables = [regex]::Matches(
+    $azureYaml,
+    '(?m)^\s*value:\s*\$\{([A-Z0-9_]+)\}\s*$'
+) | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+foreach ($variable in $agentVariables) {
+    if ($main -notmatch "(?m)^output $([regex]::Escape($variable)) string = ") {
+        throw "azure.yaml passes `${$variable}` to a service but infra/main.bicep has no output that supplies it."
+    }
+}
+
 $azureYaml = Get-Content -Raw -LiteralPath (Join-Path $root 'azure.yaml')
 $requiredPostDeployMarkers = @(
     'postdeploy:',
