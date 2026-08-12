@@ -24,6 +24,7 @@ def sync_articles(timer: func.TimerRequest) -> None:
 
 @app.route(
     route="slack/events",
+    trigger_arg_name="request",
     methods=["POST"],
     auth_level=func.AuthLevel.ANONYMOUS,
 )

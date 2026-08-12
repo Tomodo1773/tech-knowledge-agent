@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import subprocess
 import sys
@@ -18,9 +19,10 @@ def test_function_app_entrypoint_is_discoverable() -> None:
 
 
 # get_functions() rejects a second call, so the registration is read once per session.
+_FUNCTIONS = app.get_functions()
 REGISTERED = {
     function.get_function_name(): function.get_bindings()[0].get_dict_repr()
-    for function in app.get_functions()
+    for function in _FUNCTIONS
 }
 
 
@@ -53,6 +55,21 @@ def test_slack_request_url_is_anonymous_and_post_only() -> None:
     assert binding["route"] == "slack/events"
     assert [str(method.value) for method in binding["methods"]] == ["POST"]
     assert binding["authLevel"].value == "anonymous"
+
+
+def test_every_trigger_binding_name_matches_its_python_parameter() -> None:
+    # The worker refuses to load a function whose trigger binding name is not also a
+    # declared parameter, and it only reports this at host startup, so a mismatch passes
+    # every handler-level test and then crashes the deployed app. @app.route defaults the
+    # binding name to "req", which does not match a handler that names the parameter
+    # differently, so arg_name has to be explicit on each trigger.
+    for function in _FUNCTIONS:
+        binding_name = function.get_bindings()[0].get_dict_repr()["name"]
+        parameters = inspect.signature(function.get_user_function()).parameters
+        assert binding_name in parameters, (
+            f"{function.get_function_name()} binds {binding_name!r} "
+            f"but declares {sorted(parameters)!r}"
+        )
 
 
 def test_queue_worker_is_configured_for_serial_processing() -> None:
