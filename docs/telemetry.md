@@ -63,7 +63,7 @@ Hosted Agent側も同じ三層構造を出しているが、そこで計装し�
 
 自作spanは独自命名を維持し、`gen_ai.*`属性を付けない。OTelのsemantic conventionsへ寄せる具体的な見返りは「Agents (Preview)」が点灯することだが、この画面は2026-08-13の実測時点でAgent Framework由来のspanだけで完全に成立しており、エージェント実行数、生成AIエラー、tool呼び出し、model呼び出し、tokenのいずれもFunction側のspanを必要としていない。
 
-Function側のCLIENT spanに`gen_ai.*`を付ける変更は、見返りがないうえに有害になりうる。この画面はmain agentとsubagentを区別し、distro側にもmain agent帰属の処理がある。Function側のspanがgen_aiのinvoke_agent操作を名乗ると、実行回数の二重計上や実在しないagentの出現を招く。
+見返りがない一方で、壊す側のリスクは残る。この画面はmain agentとsubagentを区別し、distro側にもmain agent帰属の処理がある。Function側のspanがgen_aiのinvoke_agent操作を名乗ったときに実行回数が二重計上されるかは試していないが、いま正しく出ている画面を、得るもののない変更で危険に晒す理由がない。
 
 Agent Framework由来の`chat {model}`と`execute_tool {name}`は既に規約準拠であり、自作していないので触らない。Function側の`agent.request`は、platform側のserver span `invoke_agent`と名前の語順が逆で紛らわしかったため改名した経緯を持つ。両者は別物で、`agent.request`はFunctionから見た送信要求の所要時間を測り、`knowledge.conversation_continued`と`knowledge.response_id`を持ち、traceparent注入の親になる。
 
