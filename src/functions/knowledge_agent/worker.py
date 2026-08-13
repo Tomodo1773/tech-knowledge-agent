@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -13,11 +14,13 @@ from opentelemetry.trace import SpanKind
 from knowledge_agent.contracts import ConversationStateEntity, QueueMessage, conversation_row_key
 from knowledge_agent.state import ConversationState, is_conversation_continuable
 from knowledge_agent.telemetry import (
-    SPAN_AGENT_INVOKE,
+    SPAN_AGENT_REQUEST,
     set_attributes,
     trace_headers,
     traced,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class AgentInvocationError(RuntimeError):
@@ -57,16 +60,20 @@ class HostedAgentClient:
         if previous_response_id is not None:
             request["previous_response_id"] = previous_response_id
         with traced(
-            SPAN_AGENT_INVOKE,
+            SPAN_AGENT_REQUEST,
             kind=SpanKind.CLIENT,
             **{"knowledge.conversation_continued": previous_response_id is not None},
         ) as span:
-            # Injected inside the span so the Agent's spans hang off agent.invoke rather
+            # Injected inside the span so the Agent's spans hang off agent.request rather
             # than off the queue trigger.
             request["extra_headers"] = trace_headers()
             try:
                 response = self._client.responses.create(**request)
-            except Exception:
+            except Exception as error:
+                # `from None` keeps the response body out of the host log and takes the
+                # only clue to the failure with it. The class name separates auth from
+                # timeout from throttling and quotes nothing.
+                logger.error("agent request failed: %s", type(error).__name__)
                 raise AgentInvocationError("Hosted Agent request failed") from None
 
             response_id = getattr(response, "id", None)

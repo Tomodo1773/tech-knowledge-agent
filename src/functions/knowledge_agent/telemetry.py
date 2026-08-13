@@ -1,8 +1,11 @@
-"""Fixed spans, W3C propagation, and an attribute allowlist for the Function App.
+"""The Function App's two telemetry channels, per [telemetry.md](../../../docs/telemetry.md).
 
-Span names are low-cardinality constants so they group in Application Insights.
-Attribute keys are allowlisted because [quality.md](../../../docs/quality.md) forbids
-recording Slack secrets, authorization headers, or event bodies on custom spans.
+Spans are the primary channel: fixed low-cardinality names so they group in Application
+Insights, an allowlist of attribute keys, and W3C propagation across the Queue.
+
+The log channel carries only what a span cannot, which today means the cause of a failure
+whose exception the app deliberately replaces. A log message has no allowlist, so the
+content rules apply by hand: identifiers, outcomes, and exception types only.
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ from typing import Any
 
 from opentelemetry import context as otel_context
 from opentelemetry import trace
-from opentelemetry.trace import SpanKind, format_span_id, format_trace_id
+from opentelemetry.trace import SpanKind
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from knowledge_agent.contracts import TraceContext
@@ -27,7 +30,9 @@ SPAN_EMBEDDING_CREATE = "embedding.create"
 SPAN_COSMOS_UPSERT = "cosmos.upsert"
 SPAN_SLACK_EVENT_RECEIVE = "slack.event.receive"
 SPAN_QUEUE_PUBLISH = "queue.publish"
-SPAN_AGENT_INVOKE = "agent.invoke"
+# Not "agent.invoke": the platform's own server span is named invoke_agent, and the two
+# reversed word orders side by side in a trace read as duplicates of one another.
+SPAN_AGENT_REQUEST = "agent.request"
 SPAN_SLACK_MESSAGE_SEND = "slack.message.send"
 
 # Identifiers, counts, and outcomes only. Questions, answers, tokens, and Slack
@@ -51,6 +56,13 @@ SAFE_ATTRIBUTES = frozenset(
 )
 
 _PROPAGATOR = TraceContextTextMapPropagator()
+
+# The Python worker passes the app setting PYTHON_APPLICATIONINSIGHTS_LOGGER_NAME to
+# configure_azure_monitor as logger_name and collects that one subtree. This package is
+# that subtree, so `logging.getLogger(__name__)` from any module here is collected and
+# anything else is not. The setting's default is the root logger, which collects the
+# exporter's own records and makes delivering telemetry produce telemetry.
+LOGGER_NAMESPACE = __name__.split(".")[0]
 
 
 class UnsafeAttributeError(ValueError):
@@ -121,12 +133,6 @@ def continued_trace(telemetry: TraceContext) -> Iterator[None]:
         otel_context.detach(token)
 
 
-def log_correlation() -> dict[str, str]:
-    """Trace and span IDs for log lines, so logs and spans line up in queries."""
-    span_context = trace.get_current_span().get_span_context()
-    if not span_context.is_valid:
-        return {}
-    return {
-        "trace_id": format_trace_id(span_context.trace_id),
-        "span_id": format_span_id(span_context.span_id),
-    }
+# Nothing stamps trace and span IDs onto log lines by hand. The handler the distro
+# attaches builds every record with `context=get_current()`, so a record emitted inside a
+# span is already correlated; stamping the IDs again would only repeat them in the body.

@@ -163,7 +163,9 @@ Slack Events Function、Queue、Agent Worker、conversation state、`eyes` react
 
 W3C Trace Context、固定span、content保護、smoke datasetと実行script、CIを仕上げる。telemetryとevaluationの実装は編集pathを分けられる場合に並列化できるが、最終trace確認と全validationは指示役が直列で行う。
 
-**進捗:** 2026-08-12に、[quality.md](quality.md#telemetry)のspan表どおりの固定span名、属性のallowlist、Slack HTTPからQueueを越えるW3C Trace Context伝播、Agent側の`knowledge.search` / `cosmos.vector_query`を実装した。Slack一問が一traceに収まることをin-memory exporterのtestで確認している。属性は識別子・件数・結果値だけを許可し、質問文、回答、Signing Secret、Bot token、Authorization headerはcustom spanへ記録できない。Python workerがOTelを直接streamするよう`PYTHON_APPLICATIONINSIGHTS_ENABLE_TELEMETRY`をBicepへ追加し、CIへBicep buildを加えてStep 3の残作業も閉じた。smoke evaluationのschema、citation照合、実行scriptに加え、実記事28件から作った10件の`eval/smoke.jsonl`も用意した。caseはOAuth、サプライチェーン、Azureコスト、LangGraph、trace、Foundryなど主題が重ならないよう選び、1件は`published: false`の記事にして、公開状態で検索対象を絞らない設計が実際に効くことを確認できるようにした。
+**進捗:** 2026-08-12に、[telemetry.md](telemetry.md#trace)のspan表どおりの固定span名、属性のallowlist、Slack HTTPからQueueを越えるW3C Trace Context伝播、Agent側の`knowledge.search` / `cosmos.vector_query`を実装した。Slack一問が一traceに収まることをin-memory exporterのtestで確認している。属性は識別子・件数・結果値だけを許可し、質問文、回答、Signing Secret、Bot token、Authorization headerはcustom spanへ記録できない。Python workerがOTelを直接streamするよう`PYTHON_APPLICATIONINSIGHTS_ENABLE_TELEMETRY`をBicepへ追加し、CIへBicep buildを加えてStep 3の残作業も閉じた。smoke evaluationのschema、citation照合、実行scriptに加え、実記事28件から作った10件の`eval/smoke.jsonl`も用意した。caseはOAuth、サプライチェーン、Azureコスト、LangGraph、trace、Foundryなど主題が重ならないよう選び、1件は`published: false`の記事にして、公開状態で検索対象を絞らない設計が実際に効くことを確認できるようにした。
+
+2026-08-13に、実resourceで24時間の取り込みを実測し、telemetryを送る行為自体がlog recordを生んで再送される状態を見つけた。実trace 1,593件に対しノイズ62,519行、dependencyの約22%がdaily capで欠落していた。原因は`PYTHON_APPLICATIONINSIGHTS_LOGGER_NAME`を設定せず既定のroot loggerを収集していたことで、exporter自身のlogまでtelemetryにしていた。これを機に観測の設計を[telemetry.md](telemetry.md)へ独立させ、spanを主体・logを副とする役割分担、収集範囲、量の制御、deploy後の検証条件を正本として定めた。実装は収集範囲の限定、`agent.invoke`から`agent.request`への改名、`from None`で消えていたAgent失敗原因のERROR記録である。「Agents (Preview)」はAgent Framework由来のspanだけで成立していることを実測で確認したため、自作spanをsemantic conventionsへ寄せる変更は行わない。三層spanは、消える側が規約準拠でdependency型を持つspanなので、量の実測前には削らない。
 
 **gate:** telemetryとevaluation scriptのcode-side gateは完了。一件のSlack質問と一件のGitHub同期をtraceで追え、10件のsmoke evaluationを実環境で実行できることを確認するliveゲートが残る。
 
@@ -185,7 +187,6 @@ W3C Trace Context、固定span、content保護、smoke datasetと実行script、
 
 ## 実装時に決める項目
 
-- Application Insightsの保持期間とsampling
 - smoke evaluationのbaseline後の改善優先度
 - GitHub tokenの有効期限と、失効時にKey Vaultのsecretを差し替える頻度
 - Foundryが`responseId`を保持する期間の実測値と、会話継続の上限7日をそれに収める調整

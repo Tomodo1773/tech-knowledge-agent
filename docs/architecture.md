@@ -1,6 +1,6 @@
 # アーキテクチャ
 
-この文書は、MVPのアプリケーション、データ、identity/RBAC設計の正本である。Azureの採用設定と運用は[platform-and-operations.md](platform-and-operations.md)、観測と評価は[quality.md](quality.md)を参照する。
+この文書は、MVPのアプリケーション、データ、identity/RBAC設計の正本である。Azureの採用設定と運用は[platform-and-operations.md](platform-and-operations.md)、観測は[telemetry.md](telemetry.md)、評価は[quality.md](quality.md)を参照する。
 
 ## 境界とフロー
 

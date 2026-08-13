@@ -3,7 +3,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
+import re
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -16,20 +19,22 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from knowledge_agent.contracts import EventStateEntity, QueueMessage, TraceContext
 from knowledge_agent.slack_events import handle_slack_request
 from knowledge_agent.telemetry import (
+    LOGGER_NAMESPACE,
     SAFE_ATTRIBUTES,
-    SPAN_AGENT_INVOKE,
+    SPAN_AGENT_REQUEST,
     SPAN_QUEUE_PUBLISH,
     SPAN_SLACK_EVENT_RECEIVE,
     UnsafeAttributeError,
     continued_trace,
     current_trace_context,
-    log_correlation,
     set_attributes,
     traced,
 )
 
 SIGNING_SECRET = "signing-secret-value"
 NOW = datetime(2026, 8, 12, tzinfo=UTC)
+FUNCTIONS_ROOT = Path(__file__).parents[1]
+REPOSITORY_ROOT = Path(__file__).parents[3]
 
 
 @pytest.fixture
@@ -51,7 +56,7 @@ def test_span_attributes_outside_the_allowlist_are_refused() -> None:
     # quality.md forbids secrets, headers, and event bodies on custom spans.
     with (
         pytest.raises(UnsafeAttributeError, match="slack.signing_secret"),
-        traced(SPAN_AGENT_INVOKE, **{"slack.signing_secret": "value"}),
+        traced(SPAN_AGENT_REQUEST, **{"slack.signing_secret": "value"}),
     ):
         pass
 
@@ -60,7 +65,7 @@ def test_span_attributes_outside_the_allowlist_are_refused() -> None:
 
 
 def test_set_attributes_refuses_unknown_keys_after_the_span_started(spans: Any) -> None:
-    with traced(SPAN_AGENT_INVOKE) as span:
+    with traced(SPAN_AGENT_REQUEST) as span:
         set_attributes(span, **{"knowledge.response_id": "resp_1"})
         with pytest.raises(UnsafeAttributeError):
             set_attributes(span, **{"slack.bot_token": "xoxb-value"})
@@ -69,18 +74,58 @@ def test_set_attributes_refuses_unknown_keys_after_the_span_started(spans: Any) 
 
 
 def test_none_valued_attributes_are_dropped_instead_of_recorded(spans: Any) -> None:
-    with traced(SPAN_AGENT_INVOKE, **{"knowledge.commit_sha": None}):
+    with traced(SPAN_AGENT_REQUEST, **{"knowledge.commit_sha": None}):
         pass
 
     assert "knowledge.commit_sha" not in spans.get_finished_spans()[0].attributes
 
 
-def test_log_correlation_exposes_ids_only_inside_a_span(spans: Any) -> None:
-    assert log_correlation() == {}
-    with traced(SPAN_AGENT_INVOKE):
-        correlation = log_correlation()
-    assert len(correlation["trace_id"]) == 32
-    assert len(correlation["span_id"]) == 16
+def test_the_worker_collects_our_package_and_nothing_else() -> None:
+    """Left at its default the worker collects the exporter's own records and loops."""
+    functions_bicep = (REPOSITORY_ROOT / "infra/app/functions.bicep").read_text(
+        encoding="utf-8"
+    )
+
+    assert LOGGER_NAMESPACE == "knowledge_agent"
+    assert f"PYTHON_APPLICATIONINSIGHTS_LOGGER_NAME: '{LOGGER_NAMESPACE}'" in functions_bicep
+
+
+def test_every_app_log_record_lands_in_the_collected_subtree() -> None:
+    """Records outside the subtree are dropped, not merely uncorrelated."""
+    package = sorted((FUNCTIONS_ROOT / "knowledge_agent").glob("*.py"))
+    entry_point = FUNCTIONS_ROOT / "function_app.py"
+
+    # The root logger is never the app's logger: its records are outside the subtree.
+    root_logger_calls = [
+        f"{path.name}:{number}"
+        for path in [entry_point, *package]
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if re.search(r"\blogging\.(debug|info|warning|error|exception|critical|log)\(", line)
+    ]
+    assert root_logger_calls == []
+
+    # The entry point sits outside the package, so getLogger(__name__) would miss too.
+    assert "logging.getLogger" not in entry_point.read_text(encoding="utf-8")
+
+
+def test_the_agent_failure_cause_survives_as_a_type_name(spans: Any, caplog: Any) -> None:
+    """`from None` throws the cause away, so this log line is the only record of it."""
+    from knowledge_agent.worker import AgentInvocationError, HostedAgentClient
+
+    class FailingResponses:
+        def create(self, **request: Any) -> Any:
+            raise TimeoutError("upstream said: <question text and response body>")
+
+    client = SimpleNamespace(responses=FailingResponses())
+    with (
+        caplog.at_level(logging.ERROR, logger=LOGGER_NAMESPACE),
+        pytest.raises(AgentInvocationError),
+    ):
+        HostedAgentClient(client).ask("Q", previous_response_id=None)
+
+    assert caplog.messages == ["agent request failed: TimeoutError"]
+    # The class name is the diagnosis; the exception's own text may quote the payload.
+    assert "question text" not in caplog.text
 
 
 class FakeEventStore:
@@ -140,12 +185,12 @@ def test_one_slack_question_stays_one_trace_across_the_queue(spans: Any) -> None
         )
 
     # The worker rejoins from the queue message alone, in a separate process.
-    with continued_trace(publisher.messages[0].telemetry), traced(SPAN_AGENT_INVOKE):
+    with continued_trace(publisher.messages[0].telemetry), traced(SPAN_AGENT_REQUEST):
         pass
 
     finished = {span.name: span for span in spans.get_finished_spans()}
     trace_ids = {span.context.trace_id for span in finished.values()}
-    assert set(finished) == {SPAN_SLACK_EVENT_RECEIVE, SPAN_QUEUE_PUBLISH, SPAN_AGENT_INVOKE}
+    assert set(finished) == {SPAN_SLACK_EVENT_RECEIVE, SPAN_QUEUE_PUBLISH, SPAN_AGENT_REQUEST}
     assert len(trace_ids) == 1
     assert finished[SPAN_QUEUE_PUBLISH].attributes["knowledge.event_id"] == "Ev1"
 
@@ -188,7 +233,7 @@ def test_agent_request_carries_the_traceparent_of_its_own_invoke_span(spans: Any
     HostedAgentClient(client).ask("Q", previous_response_id=None)
 
     invoke = next(
-        span for span in spans.get_finished_spans() if span.name == SPAN_AGENT_INVOKE
+        span for span in spans.get_finished_spans() if span.name == SPAN_AGENT_REQUEST
     )
     sent = client.responses.requests[0]["extra_headers"]["traceparent"].split("-")
     assert sent[1] == format(invoke.context.trace_id, "032x")

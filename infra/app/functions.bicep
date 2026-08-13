@@ -210,6 +210,11 @@ module functionApp 'br/public:avm/res/web/site:0.24.0' = {
           // Lets the Python worker stream OpenTelemetry directly, so host and worker
           // spans correlate without duplicate host-level entries.
           PYTHON_APPLICATIONINSIGHTS_ENABLE_TELEMETRY: 'true'
+          // The worker passes this to configure_azure_monitor as logger_name and collects
+          // that subtree alone. Its default is the root logger, which collects the
+          // exporter's own records, so delivering telemetry produces telemetry. Must stay
+          // equal to LOGGER_NAMESPACE in knowledge_agent/telemetry.py.
+          PYTHON_APPLICATIONINSIGHTS_LOGGER_NAME: 'knowledge_agent'
           AZURE_CLIENT_ID: functionIdentityClientId
           AZURE_STORAGE_ACCOUNT_NAME: storageAccountName
           // The database and container names are fixed contract constants in

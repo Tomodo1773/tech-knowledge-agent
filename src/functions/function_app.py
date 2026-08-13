@@ -1,11 +1,11 @@
 """Azure Functions v2 entry point with lazy SDK loading per trigger path."""
 
-import logging
-
 import azure.functions as func
 
 from knowledge_agent.contracts import SLACK_QUEUE_NAME
 
+# This module is outside the knowledge_agent package, which is the logger subtree the
+# worker collects, so nothing logged from here would reach Application Insights.
 app = func.FunctionApp()
 
 
@@ -37,7 +37,8 @@ def slack_events(request: func.HttpRequest) -> func.HttpResponse:
         timestamp_header=request.headers.get("X-Slack-Request-Timestamp"),
         signature_header=request.headers.get("X-Slack-Signature"),
     )
-    logging.info("slack_events outcome=%s", result.audit_reason)
+    # The outcome is not logged: handle_configured_slack_request already records it as
+    # knowledge.audit_reason on the span.
     return func.HttpResponse(
         result.body,
         status_code=result.status_code,
