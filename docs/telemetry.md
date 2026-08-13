@@ -103,6 +103,16 @@ entry pointの`function_app.py`はpackageの外にあり`__name__`がsubtreeに�
 
 log messageにはspan属性のようなallowlistが効かない。質問文、回答、Slack secret、SDKのresponse本文をmessageへ書かず、識別子、結果値、例外クラス名だけを書く。Trace IDとSpan IDは手で付けない。distroが付けるhandlerがrecordを`context=get_current()`で組み立てるため、span内で出したrecordは既に相関している。
 
+### host processのlog
+
+`PYTHON_APPLICATIONINSIGHTS_LOGGER_NAME`はworker processにしか効かない。host processのlogは`host.json`の`logging`で絞る。ここをOpenTelemetry providerに限って`Warning`にする。
+
+```json
+"logging": { "OpenTelemetry": { "logLevel": { "default": "Warning" } } }
+```
+
+hostのInformation logは、instanceが起動するたびに出す設定ダンプ（`ScriptJobHostOptions`、`QueuesOptions`、`Starting JobHost`など）が大半で、1 instanceあたり約27行になる。Flex Consumptionはscale to zeroするので起動が頻繁で、実測ではrequest 5件に対しhostのlogが134行出た。invocationの成否と所要時間は`requests`にあるため、これをlogとしても持つ意味がない。providerを限定しているので、console側のlog levelは変わらない。
+
 ### SDKのWARNING / ERRORを捨てる
 
 名前空間の外のlogはWARNINGもERRORも届かない。これを許容する。SDKの失敗を知る必要が出たら、収集範囲を広げるのではなく、appがcatchして自分の名前空間へ書く。message、level、内容を自分で決められる点でも望ましい。

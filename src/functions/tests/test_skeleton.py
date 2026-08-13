@@ -80,6 +80,11 @@ def test_queue_worker_is_configured_for_serial_processing() -> None:
 
     host = json.loads((FUNCTIONS_ROOT / "host.json").read_text(encoding="utf-8"))
     assert host["telemetryMode"] == "OpenTelemetry"
+    # host.json filters reach the host process only, and its Information logs are the
+    # option dumps it prints on every instance start. Invocation outcomes live in the
+    # requests table, so exporting them as logs adds nothing. Scoped to the
+    # OpenTelemetry provider so console logging keeps its level.
+    assert host["logging"]["OpenTelemetry"]["logLevel"]["default"] == "Warning"
     assert host["extensions"]["queues"]["batchSize"] == 1
     assert host["extensions"]["queues"]["newBatchThreshold"] == 0
     # The producer base64-encodes, so the trigger must not fall back to plain text.

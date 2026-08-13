@@ -1,6 +1,13 @@
 {
   "version": "2.0",
   "telemetryMode": "OpenTelemetry",
+  "logging": {
+    "OpenTelemetry": {
+      "logLevel": {
+        "default": "Warning"
+      }
+    }
+  },
   "concurrency": {
     "dynamicConcurrencyEnabled": false,
     "snapshotPersistenceEnabled": false
