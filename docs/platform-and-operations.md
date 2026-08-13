@@ -44,7 +44,38 @@ Azure Resource Managerで表せる基盤はBicepを正とし、`azd provision`�
 | `infra/app/observability.bicep` | Log Analytics、Application Insights |
 | `infra/app/security.bicep` | Key Vaultとidentity |
 
-AVMの既定値には、個人MVPの方針と逆に振れるものがある。Cosmosの`zoneRedundant`は既定`true`、`backupPolicyType`は既定で課金対象の`Continuous30Days`、Key Vaultの`sku`は既定`premium`である。いずれも該当moduleで明示的に上書きし、理由をcommentへ残す。固定versionを上げるときは、これらの既定値が変わっていないかを合わせて確認する。
+### AVMの既定値
+
+AVMの既定値には、個人MVPの方針と逆に振れるものがある。エラーになる既定はdeployが教えてくれるが、「成功して課金される」「成功してアクセスが広がる」種類の既定は誰も教えてくれない。そのためpin済み8モジュールについて、渡していないparameterとその既定値を全件確認した。既定値はmodule READMEではなくbicep cacheにある当該versionの`main.json`から読み、その既定が実際にresourceへ書かれるかを式まで追い、実resourceの現在値と突き合わせている。
+
+方針と逆に振れる既定値は次のとおりで、いずれも該当moduleで明示する。これらのparameterがmoduleから消えた場合は`scripts/check-infra-policy.ps1`が落ちる。
+
+| module | parameter | AVM既定 | 明示値 | 逆に振れる理由 |
+|---|---|---|---|---|
+| document-db/database-account | `zoneRedundant` | `true` | `false` | 単一利用者のMVPで可用性zoneを買わない |
+| document-db/database-account | `backupPolicyType` | `Continuous30Days` | `Periodic` | backup storageが課金対象になる |
+| document-db/database-account | `totalThroughputLimit` | `-1`（無制限） | `1000` | Free Tierの無料枠を超えても止まらない |
+| document-db/database-account | `capabilitiesToAdd` | 未設定 | `EnableNoSQLVectorSearch` | vector containerの作成が失敗する |
+| storage/storage-account | `networkAcls` | 実質`Deny` | `defaultAction: Allow` | zip uploadとhost起動が403 |
+| storage/storage-account | `allowSharedKeyAccess` | `true` | `false` | key認証が生きたまま残る |
+| storage/storage-account | `supportsHttpsTrafficOnly` / `requireInfrastructureEncryption` | `true` | 同値を明示 | 作成時にしか決まらず、既定が変われば次のclean provisionで弱いaccountになる |
+| web/site | `siteConfig` | `{alwaysOn: true, ...}` | 置き換え | Flex Consumptionが拒否する |
+| web/site | `clientAffinityEnabled` | `true` | `false` | stateless HTTP triggerにARR affinityは無意味（現状はFlex側が`false`へ上書きしている） |
+| insights/component | `disableIpMasking` | `true` | `false` | 呼び出し元のIPがそのまま保存される |
+| insights/component | `samplingPercentage` | `100` | `100` | 既定が変わるとtelemetryが黙って間引かれる |
+| key-vault/vault | `sku` | `premium` | `standard` | HSMが課金される |
+| key-vault/vault | `enableVaultForDeployment` / `enableVaultForDiskEncryption` / `enableVaultForTemplateDeployment` | `true` | `false` | VM証明書取得・Disk Encryption・ARMからのsecret参照という、使っていない経路が開いたままになる |
+| cognitive-services/account | `publicNetworkAccess` | `networkAcls`未指定なら`Disabled` | `Enabled` | 明示をやめるとaccountが到達不能になる |
+
+既定に委ねてよいと判断したものは次のとおり。
+
+- **診断設定**: 8モジュールすべてで`diagnosticSettings`の既定は未設定であり、AVMが勝手に`allLogs`を作ることはない。0.1 GB/日capへ静かに流入する経路は無い。Key Vaultだけ`AuditEvent`を明示している。
+- **web/serverfarm `skuCapacity`（既定3）**: moduleは`FC1`のとき`capacity`を書かない分岐を持ち、実resourceの`sku.capacity`は0である。
+- **document-db `backupStorageRedundancy: Local`・間隔240分・保持8時間**: 無料の2コピーの範囲に収まる。`enableBurstCapacity: true`にも追加課金は無い。
+- **cognitive-services `networkAcls`未指定**: storageと違い、propertyがnullになるだけでDeny化しない。
+- **operational-insights `forceCmkForQuery: true`**: CMKを設定していないため実効が無く、KQLは通っている。
+
+pin versionを上げるときは、この表のparameterと、既定に委ねた側の根拠が変わっていないかを合わせて確認する。
 
 resource group名は`rg-${AZURE_ENV_NAME}`に固定し、上書き用のparameterを持たない。名前を変えたいときは`azd env new`の環境名で決める。azdは未設定の環境変数を空文字へ解決するため、`AZURE_RESOURCE_GROUP`をparameterとして受け取ると変数未設定時に名前を空文字で上書きしてしまう。名前は`main.bicep`のvarで導出し、決まった値だけを`AZURE_RESOURCE_GROUP` outputからazd環境へ返す。
 

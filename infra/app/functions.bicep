@@ -65,6 +65,11 @@ module storage 'br/public:avm/res/storage/storage-account:0.33.0' = {
     allowSharedKeyAccess: false
     allowBlobPublicAccess: false
     minimumTlsVersion: 'TLS1_2'
+    // Both match the current AVM default, and both are decided at creation time: an
+    // account created without infrastructure encryption cannot gain it later. State them
+    // so the next clean provision cannot quietly produce a weaker account than this one.
+    supportsHttpsTrafficOnly: true
+    requireInfrastructureEncryption: true
     publicNetworkAccess: 'Enabled'
     // This AVM version leaves networkAcls unset, which resolves to defaultAction Deny and
     // blocks both the Flex Consumption host and azd deploy's local zip upload. There is no
@@ -164,6 +169,12 @@ module functionApp 'br/public:avm/res/web/site:0.24.0' = {
     keyVaultAccessIdentityResourceId: functionIdentityResourceId
     httpsOnly: true
     publicNetworkAccess: 'Enabled'
+    // The AVM default is true and the module writes it whenever a plan is attached. Flex
+    // Consumption overrides it back to false on the live site, so this changes nothing
+    // today -- but ARR affinity has no meaning for a stateless HTTP trigger, and relying
+    // on the platform to keep correcting the template is how the siteConfig default below
+    // went unnoticed.
+    clientAffinityEnabled: false
     // This AVM version defaults siteConfig to { alwaysOn: true, ... }, and Flex
     // Consumption rejects alwaysOn outright. The module passes siteConfig straight
     // through, so the default has to be replaced rather than patched.

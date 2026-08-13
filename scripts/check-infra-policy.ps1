@@ -55,6 +55,51 @@ foreach ($block in $avmBlocks) {
     }
 }
 
+# An AVM default that points the wrong way does not fail a deployment. It succeeds and
+# bills, or succeeds and widens access, and the only signal is the next invoice or an
+# audit. Six have been found that way already, three of them only after a deploy. These
+# are the parameters where the default is known to conflict with the MVP's cost, exposure,
+# or privacy policy, so dropping one has to fail here instead of in Azure. The reviewed
+# default of every parameter is recorded in docs/platform-and-operations.md#avmの既定値.
+$requiredModuleParameters = [ordered]@{
+    'avm/res/document-db/database-account'   = @(
+        'zoneRedundant', 'backupPolicyType', 'totalThroughputLimit', 'capabilitiesToAdd'
+    )
+    'avm/res/cognitive-services/account'     = @('publicNetworkAccess')
+    'avm/res/storage/storage-account'        = @(
+        'networkAcls', 'allowSharedKeyAccess', 'allowBlobPublicAccess',
+        'supportsHttpsTrafficOnly', 'requireInfrastructureEncryption'
+    )
+    'avm/res/web/serverfarm'                 = @('zoneRedundant')
+    'avm/res/web/site'                       = @('siteConfig', 'clientAffinityEnabled')
+    'avm/res/operational-insights/workspace' = @('dailyQuotaGb', 'dataRetention')
+    'avm/res/insights/component'             = @('disableIpMasking', 'samplingPercentage')
+    'avm/res/key-vault/vault'                = @(
+        'sku', 'enableVaultForDeployment', 'enableVaultForDiskEncryption',
+        'enableVaultForTemplateDeployment'
+    )
+}
+$reviewedModules = @{}
+foreach ($block in $avmBlocks) {
+    $reference = [regex]::Match($block.Value, "br/public:(avm/res/[^:']+):").Groups[1].Value
+    if (-not $requiredModuleParameters.Contains($reference)) {
+        throw "AVM module $reference has no reviewed-defaults entry in this check."
+    }
+    $reviewedModules[$reference] = $true
+    foreach ($parameter in $requiredModuleParameters[$reference]) {
+        if ($block.Value -notmatch "(?m)^\s{4}$([regex]::Escape($parameter)):") {
+            throw "$reference must set $parameter explicitly; its AVM default conflicts with the MVP policy."
+        }
+    }
+}
+# Same failure mode as the azure.yaml ${VAR} check: if the block regex stops matching, the
+# loop above runs zero times and reports success for every module at once.
+foreach ($reference in $requiredModuleParameters.Keys) {
+    if (-not $reviewedModules.ContainsKey($reference)) {
+        throw "No AVM module block matched $reference, so its reviewed defaults are no longer checked."
+    }
+}
+
 $main = Get-Content -Raw -LiteralPath (Join-Path $root 'infra/main.bicep')
 $mainLines = $main -split '\r?\n'
 for ($index = 0; $index -lt $mainLines.Count; $index++) {

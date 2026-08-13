@@ -27,6 +27,12 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.21.0' = {
     // Continuous30Days tier bills for backup storage. Periodic keeps the two free copies.
     zoneRedundant: false
     backupPolicyType: 'Periodic'
+    // The AVM default is -1, unlimited. Free Tier covers the first 1,000 RU/s on the
+    // account (docs/platform-and-operations.md#コストと日常運用) and the single container
+    // below provisions 400, so this caps the account at the free allowance instead of
+    // letting a later container or an autoscale setting start billing unnoticed. Raising
+    // it is a deliberate one-line change; exceeding it silently is not possible.
+    totalThroughputLimit: 1000
     // The container below declares a vectorEmbeddingPolicy, which the account rejects
     // unless this capability is enabled first. It is an account-level opt-in and cannot
     // be inferred from the container definition.

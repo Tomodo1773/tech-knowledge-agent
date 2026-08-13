@@ -30,6 +30,15 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.14.0' = {
     // tier buys nothing for this MVP.
     sku: 'standard'
     enableRbacAuthorization: true
+    // All three default to true in this AVM version. They are the legacy platform access
+    // paths -- VM certificate retrieval, Azure Disk Encryption, and ARM reading a secret
+    // during a deployment -- and none of them is used here: no compute exists, and no
+    // Bicep file calls getSecret. The Function App reads its secrets at runtime through
+    // its own identity, which these flags do not touch, so leaving them on only widens
+    // the ways a secret can leave the vault.
+    enableVaultForDeployment: false
+    enableVaultForDiskEncryption: false
+    enableVaultForTemplateDeployment: false
     enablePurgeProtection: false
     softDeleteRetentionInDays: 7
     publicNetworkAccess: 'Enabled'
