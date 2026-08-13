@@ -79,7 +79,7 @@ Python workerは`configure_azure_monitor(logger_name=...)`へapp設定`PYTHON_AP
 
 | 収集しないもの | 理由 |
 |---|---|
-| `azure.core`のHTTP log、Cosmos / Table / QueueのSDK log | 同じ1操作を自作spanが記録している。logで持つと二重になる |
+| `azure.core`のHTTP log、Cosmos / Table / QueueのSDK log | 同じ1操作を自作spanとSDK spanの両方が既に記録している。logにも持たせると三重の上にもう一層積むことになる |
 | Functions workerのinvocation log | host processがrequestとして独立に記録する。`PYTHON_APPLICATIONINSIGHTS_ENABLE_TELEMETRY`はこの二重化を避ける設定である |
 | `azure.monitor.opentelemetry.exporter`、`azure.core`のHTTP logging policy | levelを問わず収集できない。送信成功はINFO、送信失敗の再試行はWARNINGで書かれるため、収集すると送信がlogを生み、そのlogが次のbatchで送られてまたlogを生む |
 
