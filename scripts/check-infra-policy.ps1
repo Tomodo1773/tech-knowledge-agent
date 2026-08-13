@@ -1,4 +1,9 @@
 $ErrorActionPreference = 'Stop'
+# Without this, PowerShell resolves an unassigned variable to $null and a check that reads
+# one silently degenerates into a no-op: a regex over $null matches nothing, so the loop
+# runs zero times and the script reports success. That is exactly how the azure.yaml
+# ${VAR} check below sat dead from the day it was added.
+Set-StrictMode -Version Latest
 
 $root = Split-Path -Parent $PSScriptRoot
 $requiredFiles = @(
@@ -84,21 +89,30 @@ if (
     throw 'The embedding deployment must flow into the azd environment.'
 }
 
+$azureYaml = Get-Content -Raw -LiteralPath (Join-Path $root 'azure.yaml')
+
 # azd resolves an unset environment variable to an empty string, so an azure.yaml
 # ${VAR} with no supplier silently ships an empty value to the Agent container and only
 # surfaces as session_not_ready at invoke time. Every variable the Agent service reads
 # must therefore have a matching root output that populates the azd environment.
-$agentVariables = [regex]::Matches(
-    $azureYaml,
-    '(?m)^\s*value:\s*\$\{([A-Z0-9_]+)\}\s*$'
-) | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+$agentVariablePattern = '(?m)^\s*value:\s*\$\{([A-Z0-9_]+)\}\s*$'
+$agentVariables = @(
+    [regex]::Matches($azureYaml, $agentVariablePattern) |
+        ForEach-Object { $_.Groups[1].Value } |
+        Sort-Object -Unique
+)
+# A check that finds nothing to check is indistinguishable from a passing check. The Agent
+# service always reads at least one substituted variable, so an empty result means the
+# pattern stopped matching azure.yaml rather than that the repository became compliant.
+if ($agentVariables.Count -eq 0) {
+    throw 'The azure.yaml ${VAR} check matched nothing, so it can no longer detect a missing root output.'
+}
 foreach ($variable in $agentVariables) {
     if ($main -notmatch "(?m)^output $([regex]::Escape($variable)) string = ") {
         throw "azure.yaml passes `${$variable}` to a service but infra/main.bicep has no output that supplies it."
     }
 }
 
-$azureYaml = Get-Content -Raw -LiteralPath (Join-Path $root 'azure.yaml')
 $requiredPostDeployMarkers = @(
     'postdeploy:',
     'windows:',

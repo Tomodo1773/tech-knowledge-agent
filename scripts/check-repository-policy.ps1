@@ -3,6 +3,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# An unassigned variable would otherwise resolve to $null and turn the check that reads it
+# into a silent no-op instead of an error. See the same guard in check-infra-policy.ps1.
+Set-StrictMode -Version Latest
 
 function Get-RepositoryText {
     param([string]$Path)
