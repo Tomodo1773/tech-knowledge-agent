@@ -169,7 +169,9 @@ W3C Trace Context、固定span、content保護、smoke datasetと実行script、
 
 同じく2026-08-13に、Agentへの送信区間をbuilt-inの計装へ寄せた。Function App側で`AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING`を有効にすると`AIProjectInstrumentor`が`responses.create`を計装し、gen_ai属性を持つ`responses` spanが出る。自作の`agent.request`は所要時間が完全に一致し`knowledge.response_id`も同値の重複だったため削除した。あわせて質問文と最終回答がどのspanにも記録されていなかったことが分かり、Function App側でも`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`を`true`にした。Agent側でこのgateを有効にする構成は採らない。公式がHosted AgentとAgent Frameworkを追加設定不要としており、実測でも得るものが無かった。
 
-**gate:** telemetryとevaluation scriptのcode-side gateは完了。一件のSlack質問と一件のGitHub同期をtraceで追え、10件のsmoke evaluationを実環境で実行できることを確認するliveゲートが残る。`responses` spanが出て`agent.request`が消え、Agent側の`chat {model}`と`invoke_agent`が戻ることの確認も、このliveゲートに含める。
+Agent側の`chat {model}`と`invoke_agent`がversion 6で戻ることは、`azd ai agent invoke`による直接呼び出しで確認済みである。Function App側の`responses` spanとcontent記録は、Slack一問を通す次のliveゲートで確認する。
+
+**gate:** telemetryとevaluation scriptのcode-side gateは完了。一件のSlack質問と一件のGitHub同期をtraceで追え、10件のsmoke evaluationを実環境で実行できることを確認するliveゲートが残る。Slack質問のtraceでは、`responses` spanが出て`agent.request`が消えていること、`gen_ai.input.messages`に質問文が載っていることもあわせて確認する。
 
 ## 残りのliveゲート
 

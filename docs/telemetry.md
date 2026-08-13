@@ -67,7 +67,17 @@ Hosted Agentは呼ばれる側で、公式は[Hosted agents (deployed to Foundry
 
 Agent containerで`GenAI tracing is not enabled`の警告が出るのは、Azure Monitor distroが起動時に`AIProjectInstrumentor().instrument()`を無条件で呼ぶためで、この機能を使う想定のない場所でもgateに当たる。警告は有効化の指示ではない。
 
-2026-08-13に一度Agent側でも有効にして実測した。`responses` spanは出なかった（Agent Frameworkがmodelへ`responses.with_raw_response.create`で到達し、instrumentorのクラスレベルpatchが掛からない）。同時にAgent Framework自身の`chat {model}`と`invoke_agent`が届かなくなったが、観測は1会話分で、機構も特定できていないため因果は確定していない。いずれにせよ公式の構成はAgent側無効なので、そちらへ戻した。
+2026-08-13に一度Agent側でも有効にして実測し、有効・無効を往復させて確かめた。
+
+| agent version | この変数 | `chat {model}` | `invoke_agent`（container） |
+|---|---|---|---|
+| 4 | 無し | 出る | 出る |
+| 5 | `true` | **出ない** | **出ない** |
+| 6 | 無し | 出る | 出る |
+
+有効化して得たものは無かった。Agent側に`responses` spanは出ない。Agent Frameworkがmodelへ`responses.with_raw_response.create`で到達しており、instrumentorのクラスレベルpatchが掛からないためである。
+
+失ったのはAgent Framework自身の`chat {model}`と`invoke_agent`である。spanが作られていないわけではなく、version 5では`execute_tool`の親span idが子から参照されているのに、そのidを持つspanがApplication Insightsに存在しなかった。`gen_ai.client.token.usage`は出続けており、exporterのエラーlogも無い。落ちる機構は特定していないが、変数の有無と対応して消えて戻ることは往復で確認した。
 
 ### 命名
 
