@@ -55,7 +55,7 @@ workerからHosted Agentを呼ぶHTTPだけは`extra_headers`で`traceparent`を
 
 理由は、消える側が規約準拠のspanだからである。Application Insightsのdependency型は、`az.namespace`を持つAzure SDK spanなら`Microsoft.Storage`や`Microsoft.DocumentDB`、`db.system`や`messaging.system`を持つなら`Cosmos DB`や`Queue Message`になる。属性を持たない自作spanは、INTERNALなら`InProc`、CLIENTなら`N/A`にしかならない。SDK計装を止めると、型の付くspanを消して型の付かないspanだけが残り、Application Mapから外部依存のnodeが消える。
 
-量も測った。三層のままでdependencyは24時間で1,522行である。内訳は`HTTP` 1,003、`InProc` 263、`N/A` 207、`Azure table` 33、`Queue Message` 8、`Azure queue` 8で、型が付いているのはすべてSDK span由来、自作spanはすべて`InProc`か`N/A`だった。0.1 GB/日のcapは10万行規模なので、三層のままで約1.5%しか使っていない。capを実際に食っていたのはlog channelの自己増殖のほうだった。減らす動機がないので、三層はこのまま残す。
+量も測った。三層のままでdependencyは24時間で1,522行である。内訳は`HTTP` 1,003、`InProc` 263、`N/A` 207、`Azure table` 33、`Queue Message` 8、`Azure queue` 8で、型が付いているのはすべてSDK span由来、自作spanはすべて`InProc`か`N/A`だった。0.1 GB/日のcapは実測で約7万行に相当する（capに触れていた24時間が、trace 67,639 + dependency 1,504 + request 192だった）。三層のままのdependency 1,522行はその約2%にすぎない。capを食っていたのはlog channelの自己増殖のほうである。減らす動機がないので、三層はこのまま残す。
 
 Hosted Agent側も同じ三層構造を出しているが、そこで計装しているのはFoundry runtimeであり、`src/agent`は`opentelemetry-api`しか依存に持たない。Function App側の設定はAgentには効かない。
 
