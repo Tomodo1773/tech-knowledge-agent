@@ -215,6 +215,17 @@ module functionApp 'br/public:avm/res/web/site:0.24.0' = {
           // exporter's own records, so delivering telemetry produces telemetry. Must stay
           // equal to LOGGER_NAMESPACE in knowledge_agent/telemetry.py.
           PYTHON_APPLICATIONINSIGHTS_LOGGER_NAME: 'knowledge_agent'
+          // configure_azure_monitor already calls AIProjectInstrumentor().instrument();
+          // this preview gate is all that stands between the call and a client span for
+          // the worker's responses.create, which today has no gen_ai span at all. The
+          // instrumentor patches openai.resources.responses.Responses at class level, so
+          // it covers the hand-built AzureOpenAI client too.
+          AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING: 'true'
+          // The Agent's own spans record the tool call's arguments and result, but nothing
+          // there records the question or the final answer: the Agent Framework emits no
+          // span for the model call itself. This client span is the only place those two
+          // exist, so content recording belongs here rather than being left to the Agent.
+          OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: 'true'
           AZURE_CLIENT_ID: functionIdentityClientId
           AZURE_STORAGE_ACCOUNT_NAME: storageAccountName
           // The database and container names are fixed contract constants in

@@ -167,7 +167,9 @@ W3C Trace Context、固定span、content保護、smoke datasetと実行script、
 
 2026-08-13に、実resourceで24時間の取り込みを実測し、telemetryを送る行為自体がlog recordを生んで再送される状態を見つけた。実trace 1,593件に対しノイズ62,519行、dependencyの約22%がdaily capで欠落していた。原因は`PYTHON_APPLICATIONINSIGHTS_LOGGER_NAME`を設定せず既定のroot loggerを収集していたことで、exporter自身のlogまでtelemetryにしていた。これを機に観測の設計を[telemetry.md](telemetry.md)へ独立させ、spanを主体・logを副とする役割分担、収集範囲、量の制御、deploy後の検証条件を正本として定めた。実装は収集範囲の限定、`agent.invoke`から`agent.request`への改名、`from None`で消えていたAgent失敗原因のERROR記録である。「Agents (Preview)」はAgent Framework由来のspanだけで成立していることを実測で確認したため、自作spanをsemantic conventionsへ寄せる変更は行わない。三層spanは、消える側が規約準拠でdependency型を持つspanなので、量の実測前には削らない。
 
-**gate:** telemetryとevaluation scriptのcode-side gateは完了。一件のSlack質問と一件のGitHub同期をtraceで追え、10件のsmoke evaluationを実環境で実行できることを確認するliveゲートが残る。
+同じく2026-08-13に、Agentへの送信区間をbuilt-inの計装へ寄せた。Function App側で`AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING`を有効にすると`AIProjectInstrumentor`が`responses.create`を計装し、gen_ai属性を持つ`responses` spanが出る。自作の`agent.request`は所要時間が完全に一致し`knowledge.response_id`も同値の重複だったため削除した。あわせて質問文と最終回答がどのspanにも記録されていなかったことが分かり、Function App側でも`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`を`true`にした。Agent側でこのgateを有効にする構成は採らない。公式がHosted AgentとAgent Frameworkを追加設定不要としており、実測でも得るものが無かった。
+
+**gate:** telemetryとevaluation scriptのcode-side gateは完了。一件のSlack質問と一件のGitHub同期をtraceで追え、10件のsmoke evaluationを実環境で実行できることを確認するliveゲートが残る。`responses` spanが出て`agent.request`が消え、Agent側の`chat {model}`と`invoke_agent`が戻ることの確認も、このliveゲートに含める。
 
 ## 残りのliveゲート
 

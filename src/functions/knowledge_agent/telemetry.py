@@ -30,9 +30,8 @@ SPAN_EMBEDDING_CREATE = "embedding.create"
 SPAN_COSMOS_UPSERT = "cosmos.upsert"
 SPAN_SLACK_EVENT_RECEIVE = "slack.event.receive"
 SPAN_QUEUE_PUBLISH = "queue.publish"
-# Not "agent.invoke": the platform's own server span is named invoke_agent, and the two
-# reversed word orders side by side in a trace read as duplicates of one another.
-SPAN_AGENT_REQUEST = "agent.request"
+# No span for the Agent request: AIProjectInstrumentor traces responses.create and emits
+# the gen_ai attributes, so anything written here would only shadow it.
 SPAN_SLACK_MESSAGE_SEND = "slack.message.send"
 
 # Identifiers, counts, and outcomes only. Questions, answers, tokens, and Slack
@@ -43,13 +42,11 @@ SAFE_ATTRIBUTES = frozenset(
         "knowledge.audit_reason",
         "knowledge.chunk_count",
         "knowledge.commit_sha",
-        "knowledge.conversation_continued",
         "knowledge.deleted_count",
         "knowledge.error_count",
         "knowledge.event_id",
         "knowledge.markdown_length",
         "knowledge.reindexed_count",
-        "knowledge.response_id",
         "knowledge.run_result",
         "knowledge.thread_key",
     }

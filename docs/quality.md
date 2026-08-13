@@ -4,7 +4,9 @@
 
 ## Content記録と保護
 
-個人利用のMVPでは、Agent versionの環境変数`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`を固定で`true`にし、built-in traceの質問・回答・tool入出力をApplication Insightsへ保存する。公開可能な技術記事と個人の技術質問だけを入力する前提であり、credential、個人情報、業務上の非公開情報はSlack質問にも記事にも含めない。これはbuilt-in `gen_ai` telemetryの設定であり、custom spanの属性・引数・戻り値を安全にするものではない。Hosted Agentの外側のResponses protocolが質問・回答と会話履歴をFoundry側で管理する一方、Agent内部のmodel callは`store: false`とし、model layerへ重複保存しない。
+個人利用のMVPでは、Agent versionとFunction Appの両方で環境変数`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`を固定で`true`にし、built-in traceの質問・回答・tool入出力をApplication Insightsへ保存する。二箇所に置くのは、記録される内容が重ならないためである。Agent側のspanが持つのはtoolの入出力（`gen_ai.tool.call.arguments`、`gen_ai.tool.call.result`）だけで、質問文と最終回答はFunction側の`responses` spanの`gen_ai.input.messages` / `gen_ai.output.messages`にしか現れない。値は`true`固定とする。公式手順にある`SPAN_AND_EVENT`は別の実装向けの値で、`AIProjectInstrumentor`は`"true"`以外をすべて偽として扱う。
+
+公開可能な技術記事と個人の技術質問だけを入力する前提であり、credential、個人情報、業務上の非公開情報はSlack質問にも記事にも含めない。これはbuilt-in `gen_ai` telemetryの設定であり、custom spanの属性・引数・戻り値を安全にするものではない。Hosted Agentの外側のResponses protocolが質問・回答と会話履歴をFoundry側で管理する一方、Agent内部のmodel callは`store: false`とし、model layerへ重複保存しない。
 
 Slack Signing Secret、Bot token、Authorization header、event本文全文をcustom spanへ記録しない。Slack workspace、user、channel、threadの識別が必要なら[architecture.md](architecture.md#会話履歴)と同じ組み合わせをハッシュ化して使う。閲覧権限は自分のEntra IDと実行に必要なManaged Identityへ限定し、第三者OTLP backendへcontentを送信しない。保持期間とdaily capで保存費用を制御する。
 

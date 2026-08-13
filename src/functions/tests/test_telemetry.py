@@ -21,9 +21,9 @@ from knowledge_agent.slack_events import handle_slack_request
 from knowledge_agent.telemetry import (
     LOGGER_NAMESPACE,
     SAFE_ATTRIBUTES,
-    SPAN_AGENT_REQUEST,
     SPAN_QUEUE_PUBLISH,
     SPAN_SLACK_EVENT_RECEIVE,
+    SPAN_SLACK_MESSAGE_SEND,
     UnsafeAttributeError,
     continued_trace,
     current_trace_context,
@@ -56,7 +56,7 @@ def test_span_attributes_outside_the_allowlist_are_refused() -> None:
     # quality.md forbids secrets, headers, and event bodies on custom spans.
     with (
         pytest.raises(UnsafeAttributeError, match="slack.signing_secret"),
-        traced(SPAN_AGENT_REQUEST, **{"slack.signing_secret": "value"}),
+        traced(SPAN_SLACK_MESSAGE_SEND, **{"slack.signing_secret": "value"}),
     ):
         pass
 
@@ -65,16 +65,16 @@ def test_span_attributes_outside_the_allowlist_are_refused() -> None:
 
 
 def test_set_attributes_refuses_unknown_keys_after_the_span_started(spans: Any) -> None:
-    with traced(SPAN_AGENT_REQUEST) as span:
-        set_attributes(span, **{"knowledge.response_id": "resp_1"})
+    with traced(SPAN_SLACK_MESSAGE_SEND) as span:
+        set_attributes(span, **{"knowledge.audit_reason": "accepted"})
         with pytest.raises(UnsafeAttributeError):
             set_attributes(span, **{"slack.bot_token": "xoxb-value"})
 
-    assert spans.get_finished_spans()[0].attributes["knowledge.response_id"] == "resp_1"
+    assert spans.get_finished_spans()[0].attributes["knowledge.audit_reason"] == "accepted"
 
 
 def test_none_valued_attributes_are_dropped_instead_of_recorded(spans: Any) -> None:
-    with traced(SPAN_AGENT_REQUEST, **{"knowledge.commit_sha": None}):
+    with traced(SPAN_SLACK_MESSAGE_SEND, **{"knowledge.commit_sha": None}):
         pass
 
     assert "knowledge.commit_sha" not in spans.get_finished_spans()[0].attributes
@@ -185,12 +185,12 @@ def test_one_slack_question_stays_one_trace_across_the_queue(spans: Any) -> None
         )
 
     # The worker rejoins from the queue message alone, in a separate process.
-    with continued_trace(publisher.messages[0].telemetry), traced(SPAN_AGENT_REQUEST):
+    with continued_trace(publisher.messages[0].telemetry), traced(SPAN_SLACK_MESSAGE_SEND):
         pass
 
     finished = {span.name: span for span in spans.get_finished_spans()}
     trace_ids = {span.context.trace_id for span in finished.values()}
-    assert set(finished) == {SPAN_SLACK_EVENT_RECEIVE, SPAN_QUEUE_PUBLISH, SPAN_AGENT_REQUEST}
+    assert set(finished) == {SPAN_SLACK_EVENT_RECEIVE, SPAN_QUEUE_PUBLISH, SPAN_SLACK_MESSAGE_SEND}
     assert len(trace_ids) == 1
     assert finished[SPAN_QUEUE_PUBLISH].attributes["knowledge.event_id"] == "Ev1"
 
@@ -208,12 +208,14 @@ def test_no_active_span_yields_no_trace_context() -> None:
     assert current_trace_context() is None
 
 
-def test_agent_request_carries_the_traceparent_of_its_own_invoke_span(spans: Any) -> None:
+def test_agent_request_carries_the_traceparent_of_the_active_span(spans: Any) -> None:
     """The Agent's spans only join this trace if the request carries traceparent.
 
     Nothing instruments the OpenAI client's httpx transport, so without the explicit
     header Foundry starts the Hosted Agent on a trace of its own and the Agent side of a
-    Slack question lands under a separate operation.
+    Slack question lands under a separate operation. AIProjectInstrumentor's own client
+    span cannot carry it either: it opens inside responses.create, after the headers are
+    fixed, and its propagation hook only reaches clients from get_openai_client().
     """
     from knowledge_agent.worker import HostedAgentClient
 
@@ -230,11 +232,10 @@ def test_agent_request_carries_the_traceparent_of_its_own_invoke_span(spans: Any
             self.responses = FakeResponses()
 
     client = FakeOpenAI()
-    HostedAgentClient(client).ask("Q", previous_response_id=None)
+    with traced(SPAN_SLACK_EVENT_RECEIVE) as active:
+        HostedAgentClient(client).ask("Q", previous_response_id=None)
+        expected = active.get_span_context()
 
-    invoke = next(
-        span for span in spans.get_finished_spans() if span.name == SPAN_AGENT_REQUEST
-    )
     sent = client.responses.requests[0]["extra_headers"]["traceparent"].split("-")
-    assert sent[1] == format(invoke.context.trace_id, "032x")
-    assert sent[2] == format(invoke.context.span_id, "016x")
+    assert sent[1] == format(expected.trace_id, "032x")
+    assert sent[2] == format(expected.span_id, "016x")

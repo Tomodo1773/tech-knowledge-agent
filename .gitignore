@@ -32,3 +32,6 @@ src/*/requirements.txt
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local-only working notes (never pushed)
+tmp/

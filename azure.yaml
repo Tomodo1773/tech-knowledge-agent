@@ -103,6 +103,14 @@ services:
         value: ${EMBEDDING_MODEL_DEPLOYMENT_NAME}
       - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
         value: 'true'
+      # AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING is deliberately absent here, though it is
+      # set on the Function App. Enabled on this side it produced no span of its own: the
+      # Agent Framework reaches the model through responses.with_raw_response.create,
+      # which the instrumentor's class-level patch does not cover. What it did do was cost
+      # the framework's own `chat {model}` and `invoke_agent` spans, which stopped
+      # arriving while their children kept referencing them as parents and while
+      # gen_ai.client.token.usage kept being exported. The startup warning it silences is
+      # the price of keeping those spans.
     container:
       resources:
         cpu: '0.5'

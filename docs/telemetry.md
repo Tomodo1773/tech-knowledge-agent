@@ -42,12 +42,12 @@ Functionsは`host.json`の`telemetryMode: OpenTelemetry`とPython workerのOTel�
 
 Slack質問は複数プロセスにまたがるため、一つの論理traceとして追跡する。HTTPはW3C Trace Contextを使い、Queue messageのtelemetry metadataへ`traceparent`と任意の`tracestate`を置き、workerでextractしてconsumer spanを始める。Slackの`eventId`は業務上の重複排除キーとend-to-endのcorrelation IDを兼ね、別fieldを追加しない。ユーザー情報・秘密情報をbaggageへ入れない。GitHub同期は単一Function実行で完結するため、propagationを跨ぐ必要はない。
 
-workerからHosted Agentを呼ぶHTTPだけは`extra_headers`で`traceparent`を明示的に載せる。OpenAI clientはhttpxを使い、Azure Monitor distroはhttpxを自動計装しないため、放置するとheaderが出ずFoundryがAgentを別traceで開始する。Foundryはこのheaderをcontainerへ転送するので、明示するだけでAgent側のspanが`agent.request`にぶら下がる。
+workerからHosted Agentを呼ぶHTTPだけは`extra_headers`で`traceparent`を明示的に載せる。OpenAI clientはhttpxを使い、Azure Monitor distroはhttpxを自動計装しないため、放置するとheaderが出ずFoundryがAgentを別traceで開始する。Foundryはこのheaderをcontainerへ転送するので、明示するだけでAgent側のspanがこのtraceへ入る。`AIProjectInstrumentor`が作る`responses` spanはこの注入には使えない。spanが開くのは`responses.create`の内側で、headerが確定した後だからである。SDKが持つtraceparent注入のhookも`get_openai_client()`が返したclientにしか登録されないため、手組みの`AzureOpenAI`には効かない。
 
 | フロー | 主なspan |
 |---|---|
 | GitHub同期 | `github.sync.run`、`github.tree.fetch`、`github.contents.fetch`、`embedding.create`、`cosmos.upsert` |
-| Slack質問 | `slack.event.receive`、`queue.publish`、`agent.request`、`knowledge.search`、`cosmos.vector_query`、`slack.message.send` |
+| Slack質問 | `slack.event.receive`、`queue.publish`、`responses`、`knowledge.search`、`cosmos.vector_query`、`slack.message.send` |
 
 ### SDKの自動計装は止めない
 
@@ -59,17 +59,35 @@ workerからHosted Agentを呼ぶHTTPだけは`extra_headers`で`traceparent`を
 
 Hosted Agent側も同じ三層構造を出しているが、そこで計装しているのはFoundry runtimeであり、`src/agent`は`opentelemetry-api`しか依存に持たない。Function App側の設定はAgentには効かない。
 
+### GenAI tracingはAgent側で有効にしない
+
+`AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING`はFunction App側だけに置く。これは`AIProjectInstrumentor`のgateであり、`AIProjectInstrumentor`は`azure-ai-projects`でFoundryを**呼ぶ側**を計装するclient-side tracingである。workerがまさにその立場にあたる。
+
+Hosted Agentは呼ばれる側で、公式は[Hosted agents (deployed to Foundry)](https://learn.microsoft.com/en-us/azure/foundry/observability/how-to/trace-agent-framework)について「trace correlationは自動で、追加設定は不要」とし、Agent Frameworkについても「tracingが有効なら自動でspanを出す。追加のcodeもpackageも要らない」としている。この変数をAgent側へ置けという案内は公式に無く、登場するのはLangChain / LangGraphと、Foundryの外でホストするAgent Frameworkの節だけである。
+
+Agent containerで`GenAI tracing is not enabled`の警告が出るのは、Azure Monitor distroが起動時に`AIProjectInstrumentor().instrument()`を無条件で呼ぶためで、この機能を使う想定のない場所でもgateに当たる。警告は有効化の指示ではない。
+
+2026-08-13に一度Agent側でも有効にして実測した。`responses` spanは出なかった（Agent Frameworkがmodelへ`responses.with_raw_response.create`で到達し、instrumentorのクラスレベルpatchが掛からない）。同時にAgent Framework自身の`chat {model}`と`invoke_agent`が届かなくなったが、観測は1会話分で、機構も特定できていないため因果は確定していない。いずれにせよ公式の構成はAgent側無効なので、そちらへ戻した。
+
 ### 命名
 
 自作spanは独自命名を維持し、`gen_ai.*`属性を付けない。OTelのsemantic conventionsへ寄せる具体的な見返りは「Agents (Preview)」が点灯することだが、この画面は2026-08-13の実測時点でAgent Framework由来のspanだけで完全に成立しており、エージェント実行数、生成AIエラー、tool呼び出し、model呼び出し、tokenのいずれもFunction側のspanを必要としていない。
 
 見返りがない一方で、壊す側のリスクは残る。この画面はmain agentとsubagentを区別し、distro側にもmain agent帰属の処理がある。Function側のspanがgen_aiのinvoke_agent操作を名乗ったときに実行回数が二重計上されるかは試していないが、いま正しく出ている画面を、得るもののない変更で危険に晒す理由がない。
 
-Agent Framework由来の`chat {model}`と`execute_tool {name}`は既に規約準拠であり、自作していないので触らない。Function側の`agent.request`は、platform側のserver span `invoke_agent`と名前の語順が逆で紛らわしかったため改名した経緯を持つ。両者は別物で、`agent.request`はFunctionから見た送信要求の所要時間を測り、`knowledge.conversation_continued`と`knowledge.response_id`を持ち、traceparent注入の親になる。
+Agent Framework由来の`chat {model}`と`execute_tool {name}`は既に規約準拠であり、自作していないので触らない。
+
+### Agent呼び出しのspanは自作しない
+
+Function側からAgentを呼ぶ区間には`agent.request`という自作spanを置いていたが、2026-08-13に削除した。`AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING`をFunction App側で有効にすると`AIProjectInstrumentor`が`responses.create`を計装し、`responses` spanが出る。実測では自作spanと所要時間が21,272マイクロ秒で完全に一致し、`knowledge.response_id`は`gen_ai.response.id`と同値だった。自作側が固有に持っていたのは`knowledge.conversation_continued`だけで、これは削除に伴い失った。
+
+`responses` spanは`gen_ai.input.messages`と`gen_ai.output.messages`を持ち、`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`で本文の記録を切り替えられる。Function App側ではこれを`true`にする。Agent側のspanはtoolの入出力（`gen_ai.tool.call.arguments`、`gen_ai.tool.call.result`）しか本文を持たず、質問文と最終回答はどこにも残っていなかったため、重複ではなく唯一の記録になる。
 
 ### 属性
 
-span名は固定の低カーディナリティ値にする。検索用にSlack `eventId`をcorrelation IDとして、GitHub commit SHA、queue状況、再index件数、モデル利用量、検索件数・最小distance、Cosmosの時間 / RUをspan属性に残す。属性キーはallowlistで固定し、質問文、回答、token、Slackヘッダは載せない。これらはspanが持つ値であり、logへ重ねない。
+span名は固定の低カーディナリティ値にする。検索用にSlack `eventId`をcorrelation IDとして、GitHub commit SHA、queue状況、再index件数、モデル利用量、検索件数・最小distance、Cosmosの時間 / RUをspan属性に残す。
+
+自作spanの属性キーはallowlistで固定し、質問文、回答、token、Slackヘッダは載せない。これはallowlistを持たない自作span側の規律であって、本文を記録しない方針ではない。本文はbuilt-inのgen_ai telemetryが`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`一つの下で記録する。経路をその1本に限定することが目的であり、自作spanへ重ねないのも、logへ重ねないのも同じ理由による。
 
 ## log channel
 
