@@ -17,20 +17,9 @@ Azure AI関連スタックを学びながら、自分の技術ブログをSlack�
 
 ## 最小構成
 
-```mermaid
-flowchart LR
-  GH[GitHub / Zenn articles] -->|daily SHA + tree check| SYNC[Sync Function]
-  SYNC --> E[Foundry embedding]
-  SYNC --> C[Cosmos DB: chunks]
-  SYNC --> T[Table Storage: state]
-  SLACK[Slack DM] -->|Events API| SWH[Slack Events Function]
-  SWH --> T
-  SWH -->|enqueue| Q[Storage Queue]
-  Q --> W[Agent Worker Function]
-  W --> A[Foundry Hosted Agent]
-  A -->|knowledge_search| C
-  W -->|chat.postMessage| SLACK
-```
+![技術ナレッジ検索エージェントの構成図](docs/architecture/architecture.svg)
+
+矢印は主要な依存関係とデータアクセスを示し、request / responseの完全な時系列は表さない。図はBicepと実装に基づく予定構成であり、Azure resourceはまだ作成していない。
 
 ## 採用と重要な決定
 
