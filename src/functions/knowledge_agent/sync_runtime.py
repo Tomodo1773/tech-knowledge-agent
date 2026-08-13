@@ -20,12 +20,17 @@ from knowledge_agent.sync_function import run_sync
 
 
 def account_openai_base_url(project_endpoint: str) -> str:
-    """Return the account-level OpenAI base URL that actually serves embeddings.
+    """Return the documented account-level OpenAI v1 base URL for inference.
 
-    The project-scoped route the SDK builds by default
-    (``/api/projects/<project>/openai/v1/``) serves chat completions but answers 404 for
-    embeddings, so the embedding client has to target the account root instead. Passing
-    base_url keeps the SDK's own token handling.
+    ``https://<resource>.services.ai.azure.com/openai/v1/`` is the endpoint Microsoft
+    documents for the OpenAI v1 API, and no project-scoped inference route is documented:
+    https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/endpoints
+
+    The project route the SDK builds by default (``/api/projects/<project>/openai/v1/``)
+    does serve chat completions, but answers an empty 404 for embeddings whether or not
+    the deployment name exists, while an unknown deployment on its own chat route answers
+    ``DeploymentNotFound``. The 404 is therefore the route lacking the operation, not the
+    deployment failing to resolve. Passing base_url keeps the SDK's own token handling.
     """
     parts = urlsplit(project_endpoint)
     return f"{parts.scheme}://{parts.netloc}/openai/v1/"

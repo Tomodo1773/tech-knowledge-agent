@@ -60,11 +60,12 @@ if ($PSCmdlet.ShouldProcess('Hosted Agent identity', 'Assign Cosmos DB Built-in 
     Write-Output 'Cosmos data-plane reader assignment is present.'
 }
 
-# knowledge_search embeds the query before it can search, and embeddings are only served by
-# the account-level /openai/v1 route. The Agent's implicit model access covers the project
-# it runs in, and RBAC does not inherit from a child project up to its account, so the
-# inference role has to be granted here. The Agent identity only exists after deploy, which
-# is why this is not in Bicep. Narrowest role that allows embeddings.
+# knowledge_search embeds the query before it can search, and the documented OpenAI v1
+# inference endpoint is the account root. The Agent's implicit model access covers the
+# project it runs in, and RBAC does not inherit from a child project up to its account, so
+# the inference role has to be granted here. The Agent identity only exists after deploy,
+# which is why this is not in Bicep. Narrowest role that allows embeddings. Evidence and
+# the route decision are in docs/architecture.md#embeddingがaccount-scopeを要求する理由.
 $inferenceRoleId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 $foundryAccountId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.CognitiveServices/accounts/$FoundryAccountName"
 

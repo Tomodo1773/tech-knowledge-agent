@@ -139,10 +139,11 @@ resource functionProjectUser 'Microsoft.Authorization/roleAssignments@2022-04-01
   }
 }
 
-// Model deployments are account resources, and the account-level /openai/v1 route is the
-// only one that serves embeddings, so a project-scoped assignment does not reach it. RBAC
-// does not inherit from a child project up to its account. Scoped to the account but with
-// the narrowest inference role rather than reusing the broad Foundry User here.
+// The documented OpenAI v1 inference endpoint is the account root, and a project-scoped
+// assignment does not reach it because RBAC does not inherit from a child project up to
+// its account. Scoped to the account but with the narrowest inference role rather than
+// reusing the broad Foundry User here. Evidence and the route decision are in
+// docs/architecture.md#embeddingがaccount-scopeを要求する理由.
 resource functionAccountInference 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: foundryAccount
   name: guid(foundryAccount.id, functionPrincipalId, cognitiveServicesOpenAIUserRoleId)
