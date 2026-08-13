@@ -19,6 +19,6 @@ Azureへ接続せず再現できるローカル検証の一式は[ローカル�
 
 初期構想の完了に伴い、恒久的な開発・運用ポリシーは[リポジトリポリシー](docs/repository-policy.md)へ整理した。
 
-Microsoft Foundry Agentの実装、構成、deploy、troubleshootでは、利用可能な`microsoft-foundry` skillを先に読む。利用できない場合は、公式の現行資料を確認する。
+Microsoft Foundry Agentの実装、構成、deploy、troubleshootでは、`.claude/skills/microsoft-foundry/`を先に読む。上流の`microsoft/azure-skills`からskill単体をpin付きでvendorしてある。MCP前提で使えない範囲と更新手順は[vendor記録](.claude/skills/VENDOR.md)を参照する。skillが扱っていない論点は、公式の現行資料で確認する。
 
 `AGENTS.md` と `CLAUDE.md` は同期対象とし、内容を常に一致させる。どちらかを変更した場合は、必ずもう一方も同じ内容に更新する。

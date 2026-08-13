@@ -35,3 +35,6 @@ Thumbs.db
 
 # Local-only working notes (never pushed)
 tmp/
+
+# Claude Code local state (skills under .claude/skills/ are tracked)
+.claude/scheduled_tasks.lock
