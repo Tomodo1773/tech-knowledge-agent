@@ -133,9 +133,11 @@ resource診断設定はKey Vaultの`AuditEvent`だけをLog Analyticsへ流す�
 
 構成を変更したら次を確認する。すべて満たすまで直ったと扱わない。
 
-1. all-zero trace IDのlog行が消えている。残ってよいのはhost processの起動ログだけで、これは再起動のたびに数十行出る。
-2. `dependencies`の`sum(itemCount)`が`count()`と一致している（capによる間引きが止まっている）。
-3. 「Agents (Preview)」が引き続き成立している。
+1. all-zero trace IDのlog行が消えている。
+2. host processの起動ログ（`Starting JobHost`、`ScriptJobHostOptions`など）が出ていない。
+3. **`requests`にinvocationが記録され続けている。** host logのfilterはlog pipelineを絞る設定であってspanを絞る設定ではないが、消えていないことを実測で確かめる。
+4. `dependencies`の`sum(itemCount)`が`count()`と一致している（capによる間引きが止まっている）。
+5. 「Agents (Preview)」が引き続き成立している。
 
 ## 参考
 
