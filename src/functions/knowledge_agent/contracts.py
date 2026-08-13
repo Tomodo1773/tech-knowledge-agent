@@ -15,6 +15,10 @@ STATE_TABLE_NAME = "state"
 SLACK_QUEUE_NAME = "slack-questions"
 COSMOS_DATABASE_NAME = "knowledge"
 COSMOS_CONTAINER_NAME = "chunks"
+# The Hosted Agent service name azure.yaml declares. The SDK builds the Responses URL
+# from the project endpoint and this name, so it is a fixed contract like the names
+# above rather than a setting. check-infra-policy.ps1 holds azure.yaml to this value.
+KNOWLEDGE_AGENT_NAME = "knowledge-agent"
 CORPUS_ID = "default"
 EMBEDDING_DIMENSIONS = 1536
 
@@ -43,7 +47,6 @@ class SettingName(StrEnum):
     COSMOS_ENDPOINT = "COSMOS_ENDPOINT"
     FOUNDRY_PROJECT_ENDPOINT = "FOUNDRY_PROJECT_ENDPOINT"
     EMBEDDING_MODEL_DEPLOYMENT_NAME = "EMBEDDING_MODEL_DEPLOYMENT_NAME"
-    KNOWLEDGE_AGENT_ENDPOINT = "KNOWLEDGE_AGENT_ENDPOINT"
     GITHUB_OWNER = "GITHUB_OWNER"
     GITHUB_REPOSITORY = "GITHUB_REPOSITORY"
     GITHUB_DEFAULT_BRANCH = "GITHUB_DEFAULT_BRANCH"

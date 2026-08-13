@@ -10,18 +10,13 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import urlparse
 
 from knowledge_agent.contracts import SettingName
-
-DEFAULT_AGENT_API_VERSION = "v1"
 
 _STORAGE_ACCOUNT_PATTERN = re.compile(r"^[a-z0-9]{3,24}$")
 _GITHUB_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 _SLACK_ID_PATTERN = re.compile(r"^[A-Z0-9]{2,32}$")
-_AGENT_RESPONSES_PATH = re.compile(
-    r"^/api/projects/[^/]+/agents/[^/]+/endpoint/protocols/openai/responses/?$"
-)
 _SLACK_BOT_TOKEN_PATTERN = re.compile(r"^xoxb-[A-Za-z0-9-]{10,}$")
 # Fine-grained and classic personal access tokens. The repository is private, so the
 # sync cannot fall back to anonymous reads.
@@ -145,51 +140,11 @@ class SlackEventsSettings:
 
 
 @dataclass(frozen=True, slots=True)
-class AgentEndpoint:
-    """Split form of the Responses endpoint that the OpenAI client needs."""
-
-    base_url: str
-    api_version: str
-
-
-def parse_agent_endpoint(value: str) -> AgentEndpoint:
-    try:
-        parsed = urlparse(value)
-        port = parsed.port
-    except ValueError:
-        raise SettingsError("KNOWLEDGE_AGENT_ENDPOINT is not a valid URL") from None
-    host = (parsed.hostname or "").lower()
-    if (
-        parsed.scheme != "https"
-        or not host.endswith(".services.ai.azure.com")
-        or port not in (None, 443)
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.fragment
-        or _AGENT_RESPONSES_PATH.fullmatch(parsed.path) is None
-    ):
-        raise SettingsError("KNOWLEDGE_AGENT_ENDPOINT is not a Foundry Responses endpoint")
-
-    query = parse_qsl(parsed.query, keep_blank_values=True)
-    if any(key != "api-version" or not query_value for key, query_value in query):
-        raise SettingsError("KNOWLEDGE_AGENT_ENDPOINT has unsupported query parameters")
-    if len(query) > 1:
-        raise SettingsError("KNOWLEDGE_AGENT_ENDPOINT repeats api-version")
-
-    # The OpenAI client appends "/responses" to base_url, so hand it the protocol root.
-    base_path = parsed.path.rstrip("/").removesuffix("/responses")
-    return AgentEndpoint(
-        base_url=f"https://{host}{base_path}",
-        api_version=query[0][1] if query else DEFAULT_AGENT_API_VERSION,
-    )
-
-
-@dataclass(frozen=True, slots=True)
 class WorkerSettings:
     """Settings for the Queue trigger. The bot token never reaches a log."""
 
     storage_account_name: str
-    agent_endpoint: AgentEndpoint
+    foundry_project_endpoint: str
     bot_token: str = field(repr=False)
 
     @classmethod
@@ -199,8 +154,14 @@ class WorkerSettings:
             raise SettingsError("SLACK_BOT_TOKEN is invalid")
         return cls(
             storage_account_name=_storage_account(environment),
-            agent_endpoint=parse_agent_endpoint(
-                _required(environment, SettingName.KNOWLEDGE_AGENT_ENDPOINT)
+            # The Responses URL is the SDK's to build from this endpoint and the agent
+            # name, so the worker validates the project endpoint the sync already uses
+            # instead of a second, deploy-time-only endpoint setting.
+            foundry_project_endpoint=_https_endpoint(
+                _required(environment, SettingName.FOUNDRY_PROJECT_ENDPOINT),
+                SettingName.FOUNDRY_PROJECT_ENDPOINT,
+                suffix=".services.ai.azure.com",
+                path_pattern=re.compile(r"^/api/projects/[^/]+/?$"),
             ),
             bot_token=bot_token,
         )

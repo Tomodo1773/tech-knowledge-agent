@@ -139,7 +139,7 @@ Hosted Agent / `azd`、Azure IaC / RBAC / capacity、Functions / Slackの3観点
 
 ### 5. Hosted Agent vertical slice
 
-`ResponsesHostServer`と`knowledge_search`を接続し、Bicep output由来の`COSMOS_ENDPOINT`と専用`EMBEDDING_MODEL_DEPLOYMENT_NAME`がazd環境からAgentへ注入されることを確認してsource-code deploymentでAgent versionを作る。database `knowledge`とcontainer `chunks`は共有契約の固定値を使う。同一projectのmodel inferenceはAgent identityへimplicitに付与されるため追加roleを作らず、deploy後にbeta.9以降のextensionが出力するAgent principal IDへCosmos Readerだけを付与する。root `postdeploy` hookはrole assignmentを先に完了し、次にFoundry extensionが生成したResponses endpointをFunction Appの`KNOWLEDGE_AGENT_ENDPOINT`へ冪等反映する。空・不正値ではfail closedとなり、値をlogへ出さないことも確認してから、Slackを介さず直接invokeして根拠記事付き回答を確認する。
+`ResponsesHostServer`と`knowledge_search`を接続し、Bicep output由来の`COSMOS_ENDPOINT`と専用`EMBEDDING_MODEL_DEPLOYMENT_NAME`がazd環境からAgentへ注入されることを確認してsource-code deploymentでAgent versionを作る。database `knowledge`とcontainer `chunks`は共有契約の固定値を使う。同一projectのmodel inferenceはAgent identityへimplicitに付与されるため追加roleを作らず、deploy後にbeta.9以降のextensionが出力するAgent principal IDへCosmos Readerだけを付与する。root `postdeploy` hookはこのrole assignmentを冪等に行う。値をlogへ出さないことを確認してから、Slackを介さず直接invokeして根拠記事付き回答を確認する。
 
 同期済みdata、Agent version、identityが順に必要なため、このstepは直列で行う。
 
@@ -151,7 +151,7 @@ Hosted Agent / `azd`、Azure IaC / RBAC / capacity、Functions / Slackの3観点
 
 Slack Events Function、Queue、Agent Worker、conversation state、`eyes` reaction、thread返信を接続する。Request URLのbootstrap後、トップレベルDM一件と追い質問一件を通し、allowlist外、再送event、poison messageも確認する。
 
-**進捗:** 2026-08-12に実resourceへ接続しないcode-side sliceを完了した。認証なしで公開するHTTP trigger、`slack-questions` Queue trigger、Table event claim、conversation state、Slack Web API、Hosted Agent呼び出しを結線した。event重複はInsert Entityの成否だけを排他とし、allowlist外とDM以外は`unauthorized_source` / `unsupported_conversation_type`の監査記録を残して2xxを返す。Hosted Agentは`KNOWLEDGE_AGENT_ENDPOINT`を`AzureOpenAI`の`base_url`へ渡し、Managed Identity tokenを`azure_ad_token_provider`で更新する。`previous_response_id`は7日以内の参照だけを使い、Agent応答→conversation state保存→thread返信の順にして再試行で二重投稿しないようにした。Slack App manifest templateとQueueのbase64 encodingも固定した。Signing SecretとBot tokenは設定の`repr`にもerrorにも出ない。実Slack / Azure通信とdeployは行っていない。
+**進捗:** 2026-08-12に実resourceへ接続しないcode-side sliceを完了した。認証なしで公開するHTTP trigger、`slack-questions` Queue trigger、Table event claim、conversation state、Slack Web API、Hosted Agent呼び出しを結線した。event重複はInsert Entityの成否だけを排他とし、allowlist外とDM以外は`unauthorized_source` / `unsupported_conversation_type`の監査記録を残して2xxを返す。Hosted Agentへのclientは`AIProjectClient.get_openai_client(agent_name=...)`が返すもので、endpointの組み立てとManaged Identity tokenの更新はSDKに任せる([architecture.md](architecture.md#hosted-agentの呼び出し))。`previous_response_id`は7日以内の参照だけを使い、Agent応答→conversation state保存→thread返信の順にして再試行で二重投稿しないようにした。Slack App manifest templateとQueueのbase64 encodingも固定した。Signing SecretとBot tokenは設定の`repr`にもerrorにも出ない。実Slack / Azure通信とdeployは行っていない。
 
 `eyes`は質問メッセージ自身へ付ける必要があるため、Queue message契約へ`messageTs`を追加し[architecture.md](architecture.md#状態とメッセージ契約)とfixtureを更新した。
 
@@ -183,7 +183,7 @@ Agent側のspanは`responses`の子ではなく兄弟になる。`traceparent`�
 2. **azd環境変数の設定。** 未設定の変数は空文字へ解決されるため、`azd env set`で次を先に入れる。実値はrepositoryにも文書にも残さない。`AZURE_PRINCIPAL_TYPE`（`User`）、`GITHUB_OWNER`、`GITHUB_REPOSITORY`、`SLACK_ALLOWED_TEAM_ID`、`SLACK_ALLOWED_USER_ID`。`AZURE_LOCATION`と`GITHUB_DEFAULT_BRANCH`は既定値を持ち、`AZURE_PRINCIPAL_ID`はazdが設定する。resource group名は`rg-<環境名>`に決まるので設定項目ではない。
 3. **`azd provision`。** Bicepを適用し、Key Vault、Cosmos、Functions、Foundry、observabilityを作る。`--preview`で先にparameterの解決結果を確認してよい。
 4. **secretのbootstrap。** Key Vaultへ`slack-signing-secret`、`slack-bot-token`、`github-token`を入れる。書き込みに要るKey Vault Secrets OfficerはBicepがdeploy実行者へ付与済みである。`github-token`は記事repositoryのContents読み取りだけに絞ったfine-grained tokenとする。実値はrepositoryにも文書にもログにも残さない。
-5. **`azd deploy`。** FunctionsとHosted Agentを配る。root postdeploy hookがAgent identityへCosmos Readerを付け、Responses endpointをFunction Appの`KNOWLEDGE_AGENT_ENDPOINT`へ反映する。Agent未deployのままFunctionsだけを配って配線済みと扱わない。
+5. **`azd deploy`。** FunctionsとHosted Agentを配る。root postdeploy hookがAgent identityへCosmos Reader、Foundry accountへの推論role、App Insightsへのmetrics publisherを付ける。Agent未deployのままFunctionsだけを配って配線済みと扱わない。
 6. **Slack App bootstrap。** [Bootstrap](platform-and-operations.md#bootstrap)に従い`slack/manifest.yaml`からAppを作り、Function endpointが決まってからEvents API Request URLを登録する。
 7. **Step 4のliveゲート。** 初回、無変更の二回目、更新、削除の4ケースを実環境で追う。
 8. **Step 5と6のliveゲート。** Slackを介さずAgentを直接invokeして根拠記事付き回答を確認し、その後Slack DM、追い質問、allowlist外、再送event、poison messageを確認する。

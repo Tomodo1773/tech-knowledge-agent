@@ -71,7 +71,6 @@
     "COSMOS_ENDPOINT",
     "FOUNDRY_PROJECT_ENDPOINT",
     "EMBEDDING_MODEL_DEPLOYMENT_NAME",
-    "KNOWLEDGE_AGENT_ENDPOINT",
     "GITHUB_OWNER",
     "GITHUB_REPOSITORY",
     "GITHUB_DEFAULT_BRANCH",
@@ -87,6 +86,7 @@
     "slackQueue": "slack-questions",
     "cosmosDatabase": "knowledge",
     "cosmosContainer": "chunks",
-    "corpusId": "default"
+    "corpusId": "default",
+    "knowledgeAgent": "knowledge-agent"
   }
 }

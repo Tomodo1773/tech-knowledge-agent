@@ -14,7 +14,12 @@ from typing import Any
 
 from opentelemetry.trace import SpanKind
 
-from knowledge_agent.contracts import SLACK_QUEUE_NAME, STATE_TABLE_NAME, QueueMessage
+from knowledge_agent.contracts import (
+    KNOWLEDGE_AGENT_NAME,
+    SLACK_QUEUE_NAME,
+    STATE_TABLE_NAME,
+    QueueMessage,
+)
 from knowledge_agent.http_transport import SlackHttpTransport
 from knowledge_agent.settings import SlackEventsSettings, WorkerSettings
 from knowledge_agent.slack_events import (
@@ -32,8 +37,6 @@ from knowledge_agent.telemetry import (
     traced,
 )
 from knowledge_agent.worker import HostedAgentClient, handle_question
-
-AGENT_TOKEN_SCOPE = "https://ai.azure.com/.default"
 
 
 def _table_endpoint(storage_account_name: str) -> str:
@@ -113,14 +116,22 @@ class WorkerRuntime:
 
 
 def _agent_client(settings: WorkerSettings, credential: Any) -> HostedAgentClient:
-    from azure.identity import get_bearer_token_provider
-    from openai import AzureOpenAI
+    from azure.ai.projects import AIProjectClient
 
+    # The SDK builds the same Responses URL this used to assemble by hand
+    # ({endpoint}/agents/{name}/endpoint/protocols/openai plus api-version=v1) and wires
+    # the same bearer token scope. It also registers AIProjectInstrumentor's httpx hook
+    # on the returned client, which injects traceparent at request time -- inside the
+    # `responses` span rather than before it, so the Agent's spans land as its children.
+    # allow_preview is what the docstring requires for agent_name; 2.4.0 does not enforce
+    # it, and depending on that gap would make this break on a patch release.
+    project = AIProjectClient(
+        endpoint=settings.foundry_project_endpoint,
+        credential=credential,
+        allow_preview=True,
+    )
     return HostedAgentClient(
-        AzureOpenAI(
-            base_url=settings.agent_endpoint.base_url,
-            api_version=settings.agent_endpoint.api_version,
-            azure_ad_token_provider=get_bearer_token_provider(credential, AGENT_TOKEN_SCOPE),
+        project.get_openai_client(agent_name=KNOWLEDGE_AGENT_NAME).with_options(
             timeout=120.0,
             max_retries=1,
         )

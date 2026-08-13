@@ -14,8 +14,7 @@ $requiredFiles = @(
     'infra/app/functions.bicep',
     'infra/app/observability.bicep',
     'infra/app/security.bicep',
-    'scripts/assign-agent-roles.ps1',
-    'scripts/set_agent_endpoint.py'
+    'scripts/assign-agent-roles.ps1'
 )
 
 foreach ($relativePath in $requiredFiles) {
@@ -74,9 +73,6 @@ if ($parameters -notmatch '\$\{AI_PROJECT_DEPLOYMENTS=\[\]\}') {
     throw 'azure.yaml model deployments must flow through AI_PROJECT_DEPLOYMENTS.'
 }
 
-if ($bicep -match '(?m)^\s*KNOWLEDGE_AGENT_ENDPOINT\s*:') {
-    throw 'The deploy-time Agent endpoint must not be synthesized in Bicep.'
-}
 if ($main -notmatch '(?m)^output COSMOS_ENDPOINT string = data\.outputs\.cosmosEndpoint$') {
     throw 'The Cosmos endpoint must flow from the data module into the azd environment.'
 }
@@ -122,15 +118,11 @@ $requiredPostDeployMarkers = @(
 )
 foreach ($marker in $requiredPostDeployMarkers) {
     if (-not $azureYaml.Contains($marker)) {
-        throw "Fail-closed Agent endpoint postdeploy marker is missing: $marker"
+        throw "Fail-closed Agent role postdeploy marker is missing: $marker"
     }
 }
-$endpointHookCommand = 'uv run --project src/functions --no-sync python scripts/set_agent_endpoint.py'
-if ([regex]::Matches($azureYaml, [regex]::Escape($endpointHookCommand)).Count -ne 2) {
-    throw 'Windows and POSIX postdeploy hooks must use the no-sync Functions Python environment.'
-}
 if ([regex]::Matches($azureYaml, 'continueOnError:\s*false').Count -lt 2) {
-    throw 'Both Agent endpoint postdeploy hooks must fail closed.'
+    throw 'Both Agent role postdeploy hooks must fail closed.'
 }
 if (
     $azureYaml -notmatch '(?ms)- name: COSMOS_ENDPOINT\s+value: \$\{COSMOS_ENDPOINT\}'
@@ -148,21 +140,23 @@ if (
     throw 'Hosted Agent content capture must remain explicitly enabled for MVP evaluation.'
 }
 
-$endpointWiring = Get-Content -Raw -LiteralPath (Join-Path $root 'scripts/set_agent_endpoint.py')
-$requiredEndpointMarkers = @(
-    'AGENT_KNOWLEDGE_AGENT_RESPONSES_ENDPOINT',
-    'KNOWLEDGE_AGENT_ENDPOINT',
-    'SERVICE_FUNCTIONS_RESOURCE_NAME',
-    'AZURE_RESOURCE_GROUP',
-    'AZURE_SUBSCRIPTION_ID',
-    '"--subscription",',
-    '"--output",',
-    '"none",'
+# The worker no longer receives a deploy-time Agent endpoint. It asks the SDK to build the
+# Responses URL from FOUNDRY_PROJECT_ENDPOINT and the agent name contracts.py fixes, which
+# is right only while azure.yaml still declares a service under that name. Nothing else
+# catches a drift: the worker would keep starting and call an agent that does not exist.
+$contracts = Get-Content -Raw -LiteralPath (
+    Join-Path $root 'src/functions/knowledge_agent/contracts.py'
 )
-foreach ($marker in $requiredEndpointMarkers) {
-    if (-not $endpointWiring.Contains($marker)) {
-        throw "Agent endpoint wiring marker is missing: $marker"
-    }
+$agentNameMatch = [regex]::Match($contracts, '(?m)^KNOWLEDGE_AGENT_NAME = "([^"]+)"$')
+if (-not $agentNameMatch.Success) {
+    throw 'contracts.py no longer defines KNOWLEDGE_AGENT_NAME, so this check cannot run.'
+}
+$agentName = [regex]::Escape($agentNameMatch.Groups[1].Value)
+if ($azureYaml -notmatch "(?m)^  ${agentName}:\s*$") {
+    throw "azure.yaml declares no '$($agentNameMatch.Groups[1].Value)' service, but contracts.py points the worker at that agent."
+}
+if ($azureYaml -notmatch "(?m)^    name: ${agentName}\s*$") {
+    throw "The azure.yaml Agent service must keep name: $($agentNameMatch.Groups[1].Value) to match contracts.py."
 }
 
 $roleWiring = Get-Content -Raw -LiteralPath (Join-Path $root 'scripts/assign-agent-roles.ps1')
@@ -218,6 +212,11 @@ foreach ($marker in $requiredFunctionTelemetryMarkers) {
     if (-not $functions.Contains($marker)) {
         throw "Function AAD telemetry marker is missing: $marker"
     }
+}
+# The Worker builds the Agent's Responses URL from this endpoint, so it is no longer only
+# the sync's input. Without it the Queue trigger fails closed at settings validation.
+if ($functions -notmatch '(?m)^\s*FOUNDRY_PROJECT_ENDPOINT: foundryProjectEndpoint$') {
+    throw 'The Function App must receive FOUNDRY_PROJECT_ENDPOINT; the Worker resolves the Agent from it.'
 }
 
 Write-Output 'Infrastructure policy checks passed.'

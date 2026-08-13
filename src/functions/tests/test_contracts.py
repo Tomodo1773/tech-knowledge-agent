@@ -13,6 +13,7 @@ from knowledge_agent.contracts import (  # noqa: E402
     COSMOS_CONTAINER_NAME,
     COSMOS_DATABASE_NAME,
     EMBEDDING_DIMENSIONS,
+    KNOWLEDGE_AGENT_NAME,
     REQUIRED_SETTING_NAMES,
     SLACK_QUEUE_NAME,
     STATE_TABLE_NAME,
@@ -156,6 +157,7 @@ class ContractTests(unittest.TestCase):
                 "cosmosDatabase": COSMOS_DATABASE_NAME,
                 "cosmosContainer": COSMOS_CONTAINER_NAME,
                 "corpusId": CORPUS_ID,
+                "knowledgeAgent": KNOWLEDGE_AGENT_NAME,
             },
             self.fixture["resourceNames"],
         )

@@ -38,6 +38,14 @@ Slack Events APIは3秒以内に2xxを返せない場合、ほぼ即時、1分�
 
 対象は単一workspaceで許可した利用者とのDMだけとする。`team_id`と`user`をallowlistで限定し、allowlist外は`unauthorized_source`、DM以外は`unsupported_conversation_type`の監査記録だけを残して2xxを返し、Queueへ投入しない。これはmodel tokenとFoundryへ保存されるcontentを想定外の相手に消費させないための制限でもある。allowlist値はdeploy時の設定として与え、実値を文書、repository、ログへ記録しない。Slack Appは自分のworkspaceへ手動installし、複数workspace向けOAuth install flowは持たない。
 
+## Hosted Agentの呼び出し
+
+WorkerはResponses endpointをURLとして受け取らず、`AIProjectClient.get_openai_client(agent_name=...)`にendpointを組み立てさせる。入力は`FOUNDRY_PROJECT_ENDPOINT`と、azure.yamlのservice名と一致する固定契約`knowledge-agent`の二つだけである。同じ値をSDKも手組みも同じ形（`{project}/agents/{name}/endpoint/protocols/openai` + `api-version=v1`、scope `https://ai.azure.com/.default`）へ落とすので、手組みは重複でしかない。
+
+SDKに寄せる利点は三つある。deploy後にしか決まらない値が消えるので、endpointをFunction Appのapp設定へ書き戻すpostdeploy段が要らなくなる。endpoint文字列を検査していた設定validationも、project endpointの検査一本に減る。そして`AIProjectInstrumentor`のtraceparent注入hookは`get_openai_client()`が返したclientにしか付かないため、これを使うことがAgent側spanをこのtraceへ入れる条件になる（[telemetry.md](telemetry.md#伝播)）。
+
+代償は`AIProjectClient(allow_preview=True)`が要ること。`agent_name`はpreview扱いで、`Foundry-Features`ヘッダが付く。agent名がazure.yamlと食い違えば存在しないagentを呼ぶだけで静かに壊れるので、一致は`check-infra-policy.ps1`が検査する。
+
 ## 会話履歴
 
 Agent Worker FunctionがHosted AgentのResponses endpointに対するクライアントとなる。外側のResponses protocolが応答と会話履歴を管理し、Workerは呼び出しの戻りにあるresponse idを記録して、次の質問で`previous_response_id`として同じendpointへ渡す。Agent container内部の`FoundryChatClient`によるmodel callは`store: false`とし、model layerへ会話履歴を重複保存しない。自前で会話履歴を組み立てて毎回送る方式は採らない。
@@ -94,7 +102,7 @@ Queue messageのwire keyはcamelCaseとし、次の形だけを許可する。`e
 }
 ```
 
-固定resource名はQueue `slack-questions`、Table `state`、Cosmos database `knowledge`、container `chunks`、corpus `default`とする。共有する設定名は`AZURE_STORAGE_ACCOUNT_NAME`、`COSMOS_ENDPOINT`、`FOUNDRY_PROJECT_ENDPOINT`、`EMBEDDING_MODEL_DEPLOYMENT_NAME`、`KNOWLEDGE_AGENT_ENDPOINT`、`GITHUB_OWNER`、`GITHUB_REPOSITORY`、`GITHUB_DEFAULT_BRANCH`、`SLACK_ALLOWED_TEAM_ID`、`SLACK_ALLOWED_USER_ID`、`SLACK_SIGNING_SECRET`、`SLACK_BOT_TOKEN`、`CHUNKING_VERSION`である。
+固定resource名はQueue `slack-questions`、Table `state`、Cosmos database `knowledge`、container `chunks`、corpus `default`、Hosted Agent `knowledge-agent`とする。共有する設定名は`AZURE_STORAGE_ACCOUNT_NAME`、`COSMOS_ENDPOINT`、`FOUNDRY_PROJECT_ENDPOINT`、`EMBEDDING_MODEL_DEPLOYMENT_NAME`、`GITHUB_OWNER`、`GITHUB_REPOSITORY`、`GITHUB_DEFAULT_BRANCH`、`SLACK_ALLOWED_TEAM_ID`、`SLACK_ALLOWED_USER_ID`、`SLACK_SIGNING_SECRET`、`SLACK_BOT_TOKEN`、`CHUNKING_VERSION`である。
 
 実装上の正確なkey、型、固定値は[`contracts.py`](../src/functions/knowledge_agent/contracts.py)と[`contracts.json`](../src/functions/tests/fixtures/contracts.json)をunit testで照合する。timestampはUTCのISO 8601、Git SHAは40文字の小文字hex、`threadKeyHash`は`${teamId}:${channelId}:${rootTs}`のUTF-8文字列に対するSHA-256小文字hexとする。
 

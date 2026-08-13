@@ -5,8 +5,8 @@ if citations miss. Failures are investigated with the printed answer and the tra
 
     uv run --project src/functions --no-sync python scripts/run-smoke-evaluation.py
 
-Requires KNOWLEDGE_AGENT_ENDPOINT and a signed-in identity with Foundry User on the
-project. Reuses the Function App's endpoint contract so the two cannot drift.
+Requires FOUNDRY_PROJECT_ENDPOINT and a signed-in identity with Foundry User on the
+project. Resolves the Agent exactly as the Worker does so the two cannot drift.
 """
 
 from __future__ import annotations
@@ -98,19 +98,18 @@ def missing_sources(case: SmokeCase, cited: Sequence[str]) -> tuple[str, ...]:
 
 
 def _agent_client() -> object:
-    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-    from knowledge_agent.settings import parse_agent_endpoint
+    from azure.ai.projects import AIProjectClient
+    from azure.identity import DefaultAzureCredential
+    from knowledge_agent.contracts import KNOWLEDGE_AGENT_NAME
     from knowledge_agent.worker import HostedAgentClient
-    from openai import AzureOpenAI
 
-    endpoint = parse_agent_endpoint(os.environ["KNOWLEDGE_AGENT_ENDPOINT"])
+    project = AIProjectClient(
+        endpoint=os.environ["FOUNDRY_PROJECT_ENDPOINT"],
+        credential=DefaultAzureCredential(),
+        allow_preview=True,
+    )
     return HostedAgentClient(
-        AzureOpenAI(
-            base_url=endpoint.base_url,
-            api_version=endpoint.api_version,
-            azure_ad_token_provider=get_bearer_token_provider(
-                DefaultAzureCredential(), "https://ai.azure.com/.default"
-            ),
+        project.get_openai_client(agent_name=KNOWLEDGE_AGENT_NAME).with_options(
             timeout=120.0,
             max_retries=1,
         )

@@ -5,6 +5,7 @@ import hmac
 import json
 import logging
 import re
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -208,34 +209,50 @@ def test_no_active_span_yields_no_trace_context() -> None:
     assert current_trace_context() is None
 
 
-def test_agent_request_carries_the_traceparent_of_the_active_span(spans: Any) -> None:
+def test_agent_request_carries_the_traceparent_of_the_active_span(
+    monkeypatch: Any, spans: Any
+) -> None:
     """The Agent's spans only join this trace if the request carries traceparent.
 
-    Nothing instruments the OpenAI client's httpx transport, so without the explicit
-    header Foundry starts the Hosted Agent on a trace of its own and the Agent side of a
-    Slack question lands under a separate operation. AIProjectInstrumentor's own client
-    span cannot carry it either: it opens inside responses.create, after the headers are
-    fixed, and its propagation hook only reaches clients from get_openai_client().
+    The Worker no longer injects the header; AIProjectInstrumentor registers an httpx
+    request hook on every client that comes out of get_openai_client(). Injecting at
+    request time is what puts the Agent's spans inside the `responses` span instead of
+    beside it. The hook is silent when it is absent, and the only visible symptom is the
+    Agent side of a Slack question landing under a separate operation, so assert it is
+    there rather than trusting the gate and the SDK to stay aligned.
     """
-    from knowledge_agent.worker import HostedAgentClient
+    import httpx
+    from azure.ai.projects import AIProjectClient
+    from azure.ai.projects.telemetry import AIProjectInstrumentor
 
-    class FakeResponses:
-        def __init__(self) -> None:
-            self.requests: list[dict[str, Any]] = []
+    from knowledge_agent.contracts import KNOWLEDGE_AGENT_NAME
 
-        def create(self, **request: Any) -> Any:
-            self.requests.append(request)
-            return SimpleNamespace(id="resp_1", output_text="Answer")
+    class StaticCredential:
+        def get_token(self, *scopes: str, **kwargs: Any) -> Any:
+            from azure.core.credentials import AccessToken
 
-    class FakeOpenAI:
-        def __init__(self) -> None:
-            self.responses = FakeResponses()
+            return AccessToken("token", int(time.time()) + 3600)
 
-    client = FakeOpenAI()
-    with traced(SPAN_SLACK_EVENT_RECEIVE) as active:
-        HostedAgentClient(client).ask("Q", previous_response_id=None)
-        expected = active.get_span_context()
+    monkeypatch.setenv("AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING", "true")
+    instrumentor = AIProjectInstrumentor()
+    instrumentor.instrument()
+    try:
+        client = AIProjectClient(
+            endpoint="https://example." "services.ai.azure.com/api/projects/dev",
+            credential=StaticCredential(),
+            allow_preview=True,
+        ).get_openai_client(agent_name=KNOWLEDGE_AGENT_NAME)
+        hooks = client._client._event_hooks["request"]
+        assert hooks, "get_openai_client returned a client with no request hook"
 
-    sent = client.responses.requests[0]["extra_headers"]["traceparent"].split("-")
+        request = httpx.Request("POST", "https://example.invalid/responses")
+        with traced(SPAN_SLACK_EVENT_RECEIVE) as active:
+            for hook in hooks:
+                hook(request)
+            expected = active.get_span_context()
+    finally:
+        instrumentor.uninstrument()
+
+    sent = request.headers["traceparent"].split("-")
     assert sent[1] == format(expected.trace_id, "032x")
     assert sent[2] == format(expected.span_id, "016x")

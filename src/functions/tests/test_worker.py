@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -182,16 +183,13 @@ def test_agent_client_sends_previous_response_id_only_when_continuing() -> None:
     client = FakeOpenAI(FakeResponse("resp_1", "Answer"))
     agent = HostedAgentClient(client)
 
-    # extra_headers carries the trace context; it is empty here because no span is active
-    # and asserted against a real span in test_telemetry.py.
     assert agent.ask("Q", previous_response_id=None) == AgentAnswer("resp_1", "Answer")
-    assert client.responses.requests[0] == {"input": "Q", "extra_headers": {}}
+    assert client.responses.requests[0] == {"input": "Q"}
 
     agent.ask("Q2", previous_response_id="resp_1")
     assert client.responses.requests[1] == {
         "input": "Q2",
         "previous_response_id": "resp_1",
-        "extra_headers": {},
     }
 
 
@@ -212,34 +210,52 @@ def test_agent_client_rejects_unusable_responses_and_sanitizes_failures() -> Non
     assert "eyJhbGciOi" not in str(captured.value)
 
 
-def test_configured_client_targets_the_agent_responses_url_with_a_managed_identity_token() -> None:
-    """Lock the wiring: split endpoint + AzureOpenAI must rebuild the deployed URL."""
-    from openai import AzureOpenAI
+class StaticCredential:
+    def get_token(self, *scopes: str, **kwargs: object) -> object:
+        from azure.core.credentials import AccessToken
+
+        assert scopes == ("https://ai.azure.com/.default",)
+        return AccessToken("managed-identity-token", int(time.time()) + 3600)
+
+
+def test_configured_client_targets_the_deployed_agent_responses_url() -> None:
+    """Lock the wiring: the SDK must rebuild the URL the deploy hook used to write.
+
+    The project endpoint plus the agent name is now the whole input, so this is what
+    stands between a rename and a worker that calls an agent which does not exist.
+    """
+    from azure.ai.projects import AIProjectClient
     from openai._models import FinalRequestOptions
 
+    from knowledge_agent.contracts import KNOWLEDGE_AGENT_NAME
     from knowledge_agent.settings import WorkerSettings
 
-    endpoint = (
-        "https://example." "services.ai.azure.com/api/projects/dev/agents/knowledge-agent"
-        "/endpoint/protocols/openai/responses?api-version=v1"
-    )
     settings = WorkerSettings.from_environment(
         {
             "AZURE_STORAGE_ACCOUNT_NAME": "techknowledge123",
-            "KNOWLEDGE_AGENT_ENDPOINT": endpoint,
+            # Split so the repository policy scan does not read this as a real endpoint.
+            "FOUNDRY_PROJECT_ENDPOINT": "https://example."
+            "services.ai.azure.com/api/projects/dev",
             "SLACK_BOT_TOKEN": "xoxb-0123456789-abcdefghij",
         }
     )
-    client = AzureOpenAI(
-        base_url=settings.agent_endpoint.base_url,
-        api_version=settings.agent_endpoint.api_version,
-        azure_ad_token_provider=lambda: "managed-identity-token",
-    )
+    client = AIProjectClient(
+        endpoint=settings.foundry_project_endpoint,
+        credential=StaticCredential(),
+        allow_preview=True,
+    ).get_openai_client(agent_name=KNOWLEDGE_AGENT_NAME)
 
-    options = client._prepare_options(
+    # The token is fetched lazily on the first authenticated request; resolving it here
+    # both proves the scope (asserted in StaticCredential) and lets the built request
+    # carry the header the deployed Worker sends.
+    assert client._refresh_api_key() == "managed-identity-token"
+    request = client._build_request(
         FinalRequestOptions.construct(method="post", url="/responses", json_data={"input": "Q"})
     )
-    request = client._build_request(options)
 
-    assert str(request.url) == endpoint
+    assert str(request.url) == (
+        "https://example." "services.ai.azure.com/api/projects/dev"
+        f"/agents/{KNOWLEDGE_AGENT_NAME}/endpoint/protocols/openai"
+        "/responses?api-version=v1"
+    )
     assert request.headers["Authorization"] == "Bearer managed-identity-token"

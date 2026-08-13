@@ -11,7 +11,6 @@ from typing import Any, Protocol
 
 from knowledge_agent.contracts import ConversationStateEntity, QueueMessage, conversation_row_key
 from knowledge_agent.state import ConversationState, is_conversation_continuable
-from knowledge_agent.telemetry import trace_headers
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +54,8 @@ class HostedAgentClient:
         # AIProjectInstrumentor traces responses.create itself, producing a client span
         # that carries gen_ai.response.id, the messages, and the duration. A span of our
         # own around this call measured the identical interval and repeated the response
-        # id under a second name, so it is gone.
-        request["extra_headers"] = trace_headers()
+        # id under a second name, so it is gone. The same instrumentor injects traceparent
+        # into this request, so nothing is added here either.
         try:
             response = self._client.responses.create(**request)
         except Exception as error:

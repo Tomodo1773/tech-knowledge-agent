@@ -26,8 +26,6 @@ hooks:
           Write-Error 'Hosted Agent Cosmos role assignment failed.'
           exit 1
         }
-        uv run --project src/functions --no-sync python scripts/set_agent_endpoint.py
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       interactive: false
       continueOnError: false
     posix:
@@ -41,7 +39,6 @@ hooks:
           echo 'Hosted Agent Cosmos role assignment failed.' >&2
           exit 1
         fi
-        uv run --project src/functions --no-sync python scripts/set_agent_endpoint.py
       interactive: false
       continueOnError: false
 
