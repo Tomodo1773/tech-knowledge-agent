@@ -33,6 +33,29 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Every assignment below needs the same shape: run an az command whose stdout/stderr must
+# never reach the log (principal, scope, and resource names are not for public CI output),
+# check its exit code, and throw a fixed message that reveals none of the values involved.
+# $azOutput is discarded rather than left assigned so a caller inspecting variables after a
+# failure cannot recover what the command printed.
+function Invoke-RoleAssignment {
+    param(
+        [Parameter(Mandatory)] [string[]] $ArgumentList,
+        [Parameter(Mandatory)] [string] $SuccessMessage,
+        [Parameter(Mandatory)] [string] $FailureMessage
+    )
+    $azOutput = & az @ArgumentList --output none 2>&1
+    $azExitCode = $LASTEXITCODE
+    $azOutput = $null
+
+    if ($azExitCode -ne 0) {
+        throw $FailureMessage
+    }
+
+    Write-Output $SuccessMessage
+}
+
 $readerRoleId = '00000000-0000-0000-0000-000000000001'
 $accountId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.DocumentDB/databaseAccounts/$CosmosAccountName"
 $scope = "$accountId/dbs/$DatabaseName/colls/$ContainerName"
@@ -41,23 +64,19 @@ $assignmentId = [guid](New-Object -TypeName System.Security.Cryptography.MD5Cryp
 )
 
 if ($PSCmdlet.ShouldProcess('Hosted Agent identity', 'Assign Cosmos DB Built-in Data Reader')) {
-    $azOutput = & az cosmosdb sql role assignment create `
-        --account-name $CosmosAccountName `
-        --resource-group $ResourceGroupName `
-        --subscription $SubscriptionId `
-        --role-assignment-id $assignmentId `
-        --role-definition-id $readerRoleId `
-        --principal-id $AgentPrincipalId `
-        --scope $scope `
-        --output none 2>&1
-    $azExitCode = $LASTEXITCODE
-    $azOutput = $null
-
-    if ($azExitCode -ne 0) {
-        throw 'Cosmos data-plane reader assignment failed.'
-    }
-
-    Write-Output 'Cosmos data-plane reader assignment is present.'
+    Invoke-RoleAssignment `
+        -ArgumentList @(
+            'cosmosdb', 'sql', 'role', 'assignment', 'create',
+            '--account-name', $CosmosAccountName,
+            '--resource-group', $ResourceGroupName,
+            '--subscription', $SubscriptionId,
+            '--role-assignment-id', $assignmentId,
+            '--role-definition-id', $readerRoleId,
+            '--principal-id', $AgentPrincipalId,
+            '--scope', $scope
+        ) `
+        -SuccessMessage 'Cosmos data-plane reader assignment is present.' `
+        -FailureMessage 'Cosmos data-plane reader assignment failed.'
 }
 
 # knowledge_search embeds the query before it can search, and the documented OpenAI v1
@@ -70,20 +89,16 @@ $inferenceRoleId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 $foundryAccountId = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.CognitiveServices/accounts/$FoundryAccountName"
 
 if ($PSCmdlet.ShouldProcess('Hosted Agent identity', 'Assign Cognitive Services OpenAI User')) {
-    $azOutput = & az role assignment create `
-        --assignee-object-id $AgentPrincipalId `
-        --assignee-principal-type ServicePrincipal `
-        --role $inferenceRoleId `
-        --scope $foundryAccountId `
-        --output none 2>&1
-    $azExitCode = $LASTEXITCODE
-    $azOutput = $null
-
-    if ($azExitCode -ne 0) {
-        throw 'Foundry inference role assignment failed.'
-    }
-
-    Write-Output 'Foundry inference role assignment is present.'
+    Invoke-RoleAssignment `
+        -ArgumentList @(
+            'role', 'assignment', 'create',
+            '--assignee-object-id', $AgentPrincipalId,
+            '--assignee-principal-type', 'ServicePrincipal',
+            '--role', $inferenceRoleId,
+            '--scope', $foundryAccountId
+        ) `
+        -SuccessMessage 'Foundry inference role assignment is present.' `
+        -FailureMessage 'Foundry inference role assignment failed.'
 }
 
 # Application Insights has local auth disabled, so the Agent's own spans are rejected with
@@ -93,18 +108,14 @@ if ($PSCmdlet.ShouldProcess('Hosted Agent identity', 'Assign Cognitive Services 
 $metricsPublisherRoleId = '3913510d-42f4-4e42-8a64-420c390055eb'
 
 if ($PSCmdlet.ShouldProcess('Hosted Agent identity', 'Assign Monitoring Metrics Publisher')) {
-    $azOutput = & az role assignment create `
-        --assignee-object-id $AgentPrincipalId `
-        --assignee-principal-type ServicePrincipal `
-        --role $metricsPublisherRoleId `
-        --scope $ApplicationInsightsResourceId `
-        --output none 2>&1
-    $azExitCode = $LASTEXITCODE
-    $azOutput = $null
-
-    if ($azExitCode -ne 0) {
-        throw 'Application Insights publisher role assignment failed.'
-    }
-
-    Write-Output 'Application Insights publisher role assignment is present.'
+    Invoke-RoleAssignment `
+        -ArgumentList @(
+            'role', 'assignment', 'create',
+            '--assignee-object-id', $AgentPrincipalId,
+            '--assignee-principal-type', 'ServicePrincipal',
+            '--role', $metricsPublisherRoleId,
+            '--scope', $ApplicationInsightsResourceId
+        ) `
+        -SuccessMessage 'Application Insights publisher role assignment is present.' `
+        -FailureMessage 'Application Insights publisher role assignment failed.'
 }

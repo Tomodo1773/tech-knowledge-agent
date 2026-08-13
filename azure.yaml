@@ -23,7 +23,7 @@ hooks:
           $agentInfo = $null
           if ($roleExitCode -ne 0) { throw 'Role assignment failed.' }
         } catch {
-          Write-Error 'Hosted Agent Cosmos role assignment failed.'
+          Write-Error 'Hosted Agent role assignment failed.'
           exit 1
         }
       interactive: false
@@ -36,7 +36,7 @@ hooks:
           $agentInfo = azd ai agent show knowledge-agent --output json 2>$null | ConvertFrom-Json
           & ./scripts/assign-agent-roles.ps1 -SubscriptionId $env:AZURE_SUBSCRIPTION_ID -ResourceGroupName $env:AZURE_RESOURCE_GROUP -CosmosAccountName $env:COSMOS_ACCOUNT_NAME -FoundryAccountName $env:AZURE_AI_ACCOUNT_NAME -ApplicationInsightsResourceId $env:APPLICATIONINSIGHTS_RESOURCE_ID -AgentPrincipalId $agentInfo.instance_identity.principal_id
         ' >/dev/null 2>&1; then
-          echo 'Hosted Agent Cosmos role assignment failed.' >&2
+          echo 'Hosted Agent role assignment failed.' >&2
           exit 1
         fi
       interactive: false

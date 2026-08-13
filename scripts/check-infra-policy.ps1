@@ -104,7 +104,7 @@ $main = Get-Content -Raw -LiteralPath (Join-Path $root 'infra/main.bicep')
 $mainLines = $main -split '\r?\n'
 for ($index = 0; $index -lt $mainLines.Count; $index++) {
     if ($mainLines[$index] -match '^output\s+' -and ($index -gt 0 -and $mainLines[$index - 1] -eq '@secure()')) {
-        throw 'Root deployment outputs must not be @secure(): ARM never returns a secure output value after the deployment call returns, so azd cannot persist it into .azure/<env>/.env, breaking azd deploy and postdeploy hooks that read it back. None of these outputs are credentials -- real secrets go directly to Key Vault instead.'
+        throw 'Root deployment outputs must not carry secrets: none of these outputs are credentials -- real secrets go directly to Key Vault instead. Marking one @secure() would not protect it either, since ARM never returns a secure output value after the deployment call returns, so azd could not persist it into .azure/<env>/.env and azd deploy and postdeploy hooks could not read it back.'
     }
 }
 
@@ -151,6 +151,21 @@ if ($agentVariables.Count -eq 0) {
 foreach ($variable in $agentVariables) {
     if ($main -notmatch "(?m)^output $([regex]::Escape($variable)) string = ") {
         throw "azure.yaml passes `${$variable}` to a service but infra/main.bicep has no output that supplies it."
+    }
+}
+
+# chatModelDeploymentName and embeddingModelDeploymentName are Bicep string defaults, not
+# references into azure.yaml, so nothing but a comment ties them to the azure.ai.project
+# deployment names that actually get created. A rename on one side would leave the Agent
+# pointed at a deployment that does not exist, and nothing would fail until an invoke did.
+foreach ($deploymentParameter in @('chatModelDeploymentName', 'embeddingModelDeploymentName')) {
+    $deploymentMatch = [regex]::Match($main, "(?m)^param $deploymentParameter string = '([^']+)'`$")
+    if (-not $deploymentMatch.Success) {
+        throw "infra/main.bicep no longer defines $deploymentParameter with a string default, so this check cannot run."
+    }
+    $deploymentName = [regex]::Escape($deploymentMatch.Groups[1].Value)
+    if ($azureYaml -notmatch "(?m)^\s*- name: $deploymentName\s*`$") {
+        throw "$deploymentParameter default ($($deploymentMatch.Groups[1].Value)) has no matching deployment under azure.yaml's ai-project service."
     }
 }
 
@@ -216,12 +231,12 @@ $requiredRoleMarkers = @(
     '2>&1',
     '*>&1',
     '>/dev/null 2>&1',
-    'Hosted Agent Cosmos role assignment failed.'
+    'Hosted Agent role assignment failed.'
 )
 $combinedRoleWiring = "$azureYaml`n$roleWiring"
 foreach ($marker in $requiredRoleMarkers) {
     if (-not $combinedRoleWiring.Contains($marker)) {
-        throw "Hosted Agent Cosmos role marker is missing: $marker"
+        throw "Hosted Agent role marker is missing: $marker"
     }
 }
 if ($azureYaml -notmatch "azure\.ai\.agents:\s*'>=1\.0\.0-beta\.9'") {

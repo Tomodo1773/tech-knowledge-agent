@@ -135,7 +135,7 @@ Hosted Agent / `azd`、Azure IaC / RBAC / capacity、Functions / Slackの3観点
 
 2026-08-12に、同期対象repositoryが非公開である実態に合わせて取得経路を認証付きへ戻した。commit SHAとtreeはKey Vault由来のGitHub tokenで認証したGitHub APIから取得し、記事本文は`raw.githubusercontent.com`ではなくGit Blobs APIの`application/vnd.github.raw`から、treeが返したblob SHAで取得する。tokenは設定の`repr`にもerrorにも出ず、許可hostは`api.github.com`だけに絞った。
 
-**gate:** code-sideのunit / mock integration gateは完了。実resource作成の許可、capacity / 料金再確認、Key VaultへのGitHub token投入、provision後に、初回、無変更二回目、更新、削除の4ケースを実環境で追跡するlive gateが残る。
+**gate:** code-sideのunit / mock integration gateは完了。実環境では初回同期と無変更の二回目実行を確認済み。更新・削除のreconcileは、記事source repositoryへの実commitを要するため未確認のまま残る。
 
 ### 5. Hosted Agent vertical slice
 
@@ -145,7 +145,7 @@ Hosted Agent / `azd`、Azure IaC / RBAC / capacity、Functions / Slackの3観点
 
 **進捗:** 2026-08-11に`FoundryChatClient` / `ResponsesHostServer`へ`knowledge_search` toolを結線し、query専用embedding設定、Cosmos vector query、untrusted data境界、citation / 根拠不足時の回答規則、Responses側の会話所有、SDK timeout / retry / lifecycleをmock testで固定した。tool instanceに累積上限を持たせず、lock済みFoundry 1.10.4 / Core 1.13.0の実classでrequest単位`max_function_calls = 3`が保持されることと、5回の独立呼出し後もtoolが利用可能なことを確認した。chat OpenAIを含む全SDK clientをexact-onceで閉じ、構築途中の失敗でも既生成clientを閉じる。beta.9のAgent principal ID outputを使うCosmos Reader assignmentとFunction endpoint設定をroot postdeployへfail-closedな順序で接続し、Azure CLIの両streamと外側hook出力から実値を除去した。実通信・deployは行っていない。2026-08-12に`sfw uv lock`でAgentのdirect依存`azure-cosmos`を`uv.lock`へ固定し、`uv sync --locked`、ruff、unit test、`uv export --frozen`、package layout検査がローカルで通ることを確認した。
 
-**gate:** code-sideのlock / lint / test / export gateは完了。実環境ではAgent Managed Identityによるquery embeddingとCosmos vector queryが成功し、credentialをcodeやlogへ出さないことを確認する作業が残る。
+**gate:** 完了。実環境でAgent Managed Identityによるquery embeddingとCosmos vector queryが成功し、credentialがcodeにもlogにも出ないことを確認した。deploy直後にaccount scopeのinference roleが付与されるまでの窓でembeddingsが401になる期間があったが、role付与後は解消し再発しない構造であることを確認済み([architecture.md](architecture.md#embeddingがaccount-scopeを要求する理由))。
 
 ### 6. Slack end-to-end slice
 
@@ -157,7 +157,7 @@ Slack Events Function、Queue、Agent Worker、conversation state、`eyes` react
 
 実装済みmoduleの結線と一つのSlack Appを扱うため、deployと疎通確認は直列で行う。
 
-**gate:** code-sideのunit gateは完了。Slack App作成、Request URL登録、Key Vaultへのsecret投入の後に、Slack DM → Queue → Agent → Cosmos → Slack threadが成功し、`previous_response_id`で追い質問が継続することを実環境で確認するliveゲートが残る。
+**gate:** code-sideのunit gateは完了。実環境でSlack DM → Queue → Agent → Cosmos → Slack threadの成功と、`previous_response_id`による追い質問の継続を確認した。allowlist外の拒否と再送eventのdedupは、別アカウント・別workspaceを要するため実環境では未確認のまま残り、unit testでのみ担保している。
 
 ### 7. 観測、評価、配送の仕上げ
 
@@ -171,23 +171,27 @@ W3C Trace Context、固定span、content保護、smoke datasetと実行script、
 
 Slack一問を実環境へ通して確認した。一traceに37 span（Function 16、platform 1、Agent container 20）が収まり、`responses`が出て`agent.request`は無く、`chat {model}`と`invoke_agent`はversion 6で戻り、`gen_ai.input.messages` / `output.messages`に質問文と最終回答が入っていた。親が解決しないspanはSlackからのHTTP要求だけである。
 
-Agent側のspanは`responses`の子ではなく兄弟になる。`traceparent`を注入する時点で`responses` spanはまだ開いていないためで、入れ子にするにはclientを`get_openai_client()`由来へ替えてSDKのpropagation hookを効かせる必要がある。
+Agent側のspanは当時`responses`の子ではなく兄弟だった。`traceparent`を注入する時点で`responses` spanがまだ開いていなかったためで、入れ子にするにはclientを`get_openai_client()`由来へ替えてSDKのpropagation hookを効かせる必要があった。
 
-**gate:** telemetryのliveゲートは完了。一件のGitHub同期をtraceで追え、10件のsmoke evaluationを実環境で実行できることを確認するliveゲートが残る。
+その後、workerのclientを`AIProjectClient.get_openai_client(agent_name=...)`へ差し替えた([architecture.md](architecture.md#hosted-agentの呼び出し))結果、Agent側のspanは`responses`の子として入れ子になった。Slack一問(2026-08-13)で実測し、Slack受信からSlack返信までが1 operationに収まることを確認済み([telemetry.md](telemetry.md#trace))。
+
+**gate:** 完了。一件のGitHub同期をtraceで追い、`scripts/run-smoke-evaluation.py`で10件のsmoke evaluationを実環境で実行して確認した([quality.md](quality.md#mvp評価))。
 
 ## 残りのliveゲート
 
-2026-08-12時点でStep 0〜7のcode-sideは完了し、残るのは実resourceを伴う確認だけである。順序は依存関係で決まっており飛ばせない。手順とコマンドの正本は[platform-and-operations.md](platform-and-operations.md#デプロイと復旧)、確認する中身は各Stepのgateを参照する。
+2026-08-13時点で、実resource作成からSlack DM・GitHub同期・smoke evaluationの実環境確認まで完了した。手順とコマンドの正本は[platform-and-operations.md](platform-and-operations.md#デプロイと復旧)。
 
-1. **実resource作成の許可とコスト再確認。** [開始条件](#開始条件)のとおり、`azd provision`直前にFoundryのregion、SKU、model version、TPMのcapacity / quotaと料金を確認する。ここから継続課金が始まるため、利用者の明示的な許可なしに次へ進まない。
-2. **azd環境変数の設定。** 未設定の変数は空文字へ解決されるため、`azd env set`で次を先に入れる。実値はrepositoryにも文書にも残さない。`AZURE_PRINCIPAL_TYPE`（`User`）、`GITHUB_OWNER`、`GITHUB_REPOSITORY`、`SLACK_ALLOWED_TEAM_ID`、`SLACK_ALLOWED_USER_ID`。`AZURE_LOCATION`と`GITHUB_DEFAULT_BRANCH`は既定値を持ち、`AZURE_PRINCIPAL_ID`はazdが設定する。resource group名は`rg-<環境名>`に決まるので設定項目ではない。
-3. **`azd provision`。** Bicepを適用し、Key Vault、Cosmos、Functions、Foundry、observabilityを作る。`--preview`で先にparameterの解決結果を確認してよい。
-4. **secretのbootstrap。** Key Vaultへ`slack-signing-secret`、`slack-bot-token`、`github-token`を入れる。書き込みに要るKey Vault Secrets OfficerはBicepがdeploy実行者へ付与済みである。`github-token`は記事repositoryのContents読み取りだけに絞ったfine-grained tokenとする。実値はrepositoryにも文書にもログにも残さない。
-5. **`azd deploy`。** FunctionsとHosted Agentを配る。root postdeploy hookがAgent identityへCosmos Reader、Foundry accountへの推論role、App Insightsへのmetrics publisherを付ける。Agent未deployのままFunctionsだけを配って配線済みと扱わない。
-6. **Slack App bootstrap。** [Bootstrap](platform-and-operations.md#bootstrap)に従い`slack/manifest.yaml`からAppを作り、Function endpointが決まってからEvents API Request URLを登録する。
-7. **Step 4のliveゲート。** 初回、無変更の二回目、更新、削除の4ケースを実環境で追う。
-8. **Step 5と6のliveゲート。** Slackを介さずAgentを直接invokeして根拠記事付き回答を確認し、その後Slack DM、追い質問、allowlist外、再送event、poison messageを確認する。
-9. **Step 7のliveゲート。** 一件のSlack質問と一件のGitHub同期をtraceで追い、`scripts/run-smoke-evaluation.py`で10件を実行する。あわせて、local authを無効にしたApplication Insightsへworker processのspanが届いているかを最初のtraceで確認する。公式はEntra認証をhostとworkerで別々に構成すると説明しており、届かない場合はここだけが欠ける。
+- ✅ 実resource作成の許可とコスト再確認、azd環境変数の設定、`azd provision`、secretのbootstrap、`azd deploy`、Slack App bootstrap
+- ✅ Step 4のliveゲート: 初回同期、無変更の二回目実行
+- ✅ Step 5のliveゲート: Agent Managed Identityによるquery embeddingとCosmos vector queryの成功、credentialが出ないこと
+- ✅ Step 6のliveゲート: Slack DM → Queue → Agent → Cosmos → Slack thread、`previous_response_id`による追い質問の継続
+- ✅ Step 7のliveゲート: 一件のSlack質問と一件のGitHub同期のtrace追跡、10件のsmoke evaluation実行
+
+残っているのは次の3件で、いずれも実resource作成やdeployの繰り返しではなく、個別の準備が要る。
+
+1. **Step 4: 記事の更新・削除の反映。** 記事source repositoryへ実commitを作り、変更・削除がCosmosへ反映されることを確認する。
+2. **Step 6: 再送event dedup。** Slackの同一`event_id`再送でQueue messageが二重投入されないことを実環境で確認する。unit testでは担保済みで、実環境では未再現。
+3. **Step 6: allowlist外。** 許可外workspace・利用者からの疎通が拒否されることを確認する。別のSlackアカウントまたはworkspaceを要する。unit testでは担保済み。
 
 失敗してもrollbackせず、traceとログから原因を切り分けて修正し再deployする。
 

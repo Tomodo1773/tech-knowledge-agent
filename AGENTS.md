@@ -11,7 +11,7 @@
 - プレビュー採用の条件: IaC非対応による手動設定、環境差分、運用負荷、日常のCI/CDやAzureプロビジョニングの複雑化が大きい場合は、学習価値と運用コストを比較してから採用する。
 - 配送方針: 日常のCI/CDはスムーズかつ再現可能に回せるようにし、Azureプロビジョニングも可能な限り自動化する。避けられない手動作業は初回bootstrapなどに限定し、理由と手順を明示する。
 
-実装計画Step 0〜7のcode-sideは完了し、実resourceはまだ作成していない。残作業は[残りのliveゲート](docs/implementation-plan.md#残りのliveゲート)へ順序付きでまとめてある。各Stepの到達点と残ったgateは[実装計画](docs/implementation-plan.md)の進捗とgateを正とする。
+実装計画Step 0〜7は完了し、実resourceは稼働中である。Slack DM・GitHub同期・smoke evaluationの実環境確認も済んでいる。残作業は[残りのliveゲート](docs/implementation-plan.md#残りのliveゲート)にまとめてある。各Stepの到達点と残ったgateは[実装計画](docs/implementation-plan.md)の進捗とgateを正とする。
 
 Azureへ接続せず再現できるローカル検証の一式は[ローカル開発](docs/platform-and-operations.md#ローカル開発)を参照する。変更を加えたらcommit前にこの一式を通す。依存の取得・更新は必ず`sfw`経由で行う。
 

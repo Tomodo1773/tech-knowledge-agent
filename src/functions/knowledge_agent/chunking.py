@@ -85,6 +85,10 @@ def _published_at(value: Any) -> str | None:
     if isinstance(value, datetime):
         parsed = value
     elif isinstance(value, date):
+        # No tzinfo here on purpose: a bare date has no offset either, so it falls into the
+        # naive-timestamp branch below and gets the same JST interpretation as a naive
+        # string. Attaching UTC here would silently give date-only front matter a different
+        # timezone than every other naive value this function accepts.
         parsed = datetime.combine(value, time.min)
     elif isinstance(value, str):
         try:

@@ -253,6 +253,8 @@ def test_configured_client_targets_the_deployed_agent_responses_url() -> None:
         FinalRequestOptions.construct(method="post", url="/responses", json_data={"input": "Q"})
     )
 
+    # Split so the repository policy scan does not read this fixture as a real endpoint
+    # (see the same idiom in test_settings.py).
     assert str(request.url) == (
         "https://example." "services.ai.azure.com/api/projects/dev"
         f"/agents/{KNOWLEDGE_AGENT_NAME}/endpoint/protocols/openai"

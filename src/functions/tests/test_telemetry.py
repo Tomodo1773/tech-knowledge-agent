@@ -237,6 +237,8 @@ def test_agent_request_carries_the_traceparent_of_the_active_span(
     instrumentor = AIProjectInstrumentor()
     instrumentor.instrument()
     try:
+        # Split so the repository policy scan does not read this fixture as a real
+        # endpoint (see the same idiom in test_settings.py).
         client = AIProjectClient(
             endpoint="https://example." "services.ai.azure.com/api/projects/dev",
             credential=StaticCredential(),

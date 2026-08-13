@@ -51,6 +51,26 @@ def test_accepts_zenn_naive_published_at_as_jst() -> None:
     assert article.published_at == "2025-04-15T08:00:00Z"
 
 
+def test_accepts_date_only_published_at_as_jst_midnight() -> None:
+    # YAML parses an unquoted "YYYY-MM-DD" front matter value as a date, not a datetime.
+    # It carries no offset either, so it must get the same JST interpretation as a naive
+    # string (test above), not UTC.
+    article = parse_article(
+        "articles/a.md",
+        "---\n"
+        'title: "T"\n'
+        "emoji: robot\n"
+        "type: tech\n"
+        "topics: [azure]\n"
+        "published: true\n"
+        "published_at: 2025-04-15\n"
+        "---\n"
+        "Body",
+    )
+
+    assert article.published_at == "2025-04-14T15:00:00Z"
+
+
 @pytest.mark.parametrize(
     "front_matter",
     [

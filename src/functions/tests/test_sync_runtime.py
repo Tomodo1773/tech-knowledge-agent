@@ -15,6 +15,8 @@ def test_runtime_wires_one_managed_identity_to_bounded_sdk_clients(
 
     environment = {
         "AZURE_STORAGE_ACCOUNT_NAME": "techknowledge123",
+        # Split so the repository policy scan does not read these fixtures as real
+        # endpoints (see the same idiom in test_settings.py).
         "COSMOS_ENDPOINT": "https://example." "documents.azure.com:443/",
         "FOUNDRY_PROJECT_ENDPOINT": (
             "https://example." "services.ai.azure.com/api/projects/dev"
