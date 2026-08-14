@@ -1,0 +1,41 @@
+# Foundryのbatch evaluationへ渡す判定器の定義。設計の正本はdocs/quality.md#評価軸と判定器。
+#
+# このファイルとpromptの内容から指紋を計算し、指紋ごとに評価の枠を作り分ける。ここを変えると
+# 次の実行から新しい枠になるので、採点基準を変えたrunと変える前のrunが混ざることはない。
+#
+# 判定modelのdeployment名はここへ書かず、環境変数AZURE_AI_MODEL_DEPLOYMENT_NAMEから取る
+# (docs/repository-policy.md)。名前も指紋に含めるため、modelを差し替えても枠は分かれる。
+
+stage: 1
+
+criteria:
+  # (1) 回答の内容が期待と合っているか。根拠が無いときに無いと言えるかも、caseごとの
+  # expectedBehaviorの書き分けでこの判定器が吸収する。
+  - type: score_model
+    name: answer_quality
+    # developerメッセージ。出力形式は書かない。判定と理由という出力contractはFoundryが
+    # 強制的に付け足すため、独自の形式を書くと衝突して壊れる。
+    promptFile: answer-quality.md
+    # userメッセージ。判定modelが見るものはすべてこのファイルから追える。
+    input: |
+      # 質問
+
+      {{item.query}}
+
+      # 期待する振る舞い
+
+      {{item.expectedBehavior}}
+
+      # エージェントの回答
+
+      {{sample.output_text}}
+    range: [1, 5]
+    passThreshold: 4
+
+  # (5) 正解記事をsourceとして挙げたか。judge modelを使わない決定的判定。
+  # likeは「inputがreferenceを含む」判定。回答本文には記事pathを含むcommit URLが出る。
+  - type: string_check
+    name: cited_expected_source
+    operation: like
+    input: '{{sample.output_text}}'
+    reference: '{{item.expectedSource}}'

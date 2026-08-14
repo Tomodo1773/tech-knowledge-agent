@@ -32,8 +32,9 @@ Function AppとHosted Agentは依存とdeploy単位が異なるため、別のuv
 | `src/agent/main.py`、`src/agent/knowledge_search.py` | Responses protocolのHosted AgentとCosmos検索tool |
 | `src/agent/pyproject.toml`、`src/agent/uv.lock`、`src/agent/.azdignore` | Hosted Agentの依存、build対象、除外設定 |
 | `src/agent/tests/` | query/result整形など外部接続を要しないunit test |
-| `eval/smoke.jsonl` | queryと期待source記事を持つ固定smoke dataset |
-| `scripts/assign-agent-roles.ps1`、`scripts/run-smoke-evaluation.py` | post-deploy RBACとsmoke evaluation |
+| `eval/smoke.jsonl`、`eval/answer-quality.md`、`eval/criteria.yaml` | 固定の質問リストと、Foundry評価の採点promptと判定器定義 |
+| `scripts/assign-agent-roles.ps1` | post-deploy RBAC |
+| `scripts/eval_dataset.py`、`scripts/check-eval-dataset.py`、`scripts/run-foundry-evaluation.py` | 質問リストの契約、その書式検査、Foundry評価の実行 |
 | `.github/workflows/ci.yml` | ruff、pytest、package layout、repository policyなどAzureへログインしないCI。Bicep buildはStep 3で追加 |
 | 既存の`.github/workflows/repository-policy.yml`、`scripts/check-repository-policy.ps1` | 指示ファイル同期とrepository policy検証 |
 
@@ -175,7 +176,7 @@ Agent側のspanは当時`responses`の子ではなく兄弟だった。`tracepar
 
 その後、workerのclientを`AIProjectClient.get_openai_client(agent_name=...)`へ差し替えた([architecture.md](architecture.md#hosted-agentの呼び出し))結果、Agent側のspanは`responses`の子として入れ子になった。Slack一問(2026-08-13)で実測し、Slack受信からSlack返信までが1 operationに収まることを確認済み([telemetry.md](telemetry.md#trace))。
 
-**gate:** 完了。一件のGitHub同期をtraceで追い、`scripts/run-smoke-evaluation.py`で10件のsmoke evaluationを実環境で実行して確認した([quality.md](quality.md#mvp評価))。
+**gate:** 完了。一件のGitHub同期をtraceで追い、10件のsmoke evaluationを実環境で実行して確認した。2026-08-14に、この10件はFoundryのbatch evaluationへ移し、当時のscriptは書式検査へ縮小した([quality.md](quality.md#評価設計))。
 
 ## 残りのliveゲート
 

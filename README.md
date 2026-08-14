@@ -41,7 +41,7 @@ Azure AI関連スタックを学びながら、自分の技術ブログをSlack�
 | [architecture.md](docs/architecture.md) | データ同期・質問応答・データ契約・identity/RBACの設計上の正本 |
 | [platform-and-operations.md](docs/platform-and-operations.md) | Azure採用設定、IaC、bootstrap、deploy・運用の正本 |
 | [telemetry.md](docs/telemetry.md) | 観測で答える問い、signalの役割分担、span / logの設計と量の制御の正本 |
-| [quality.md](docs/quality.md) | content記録、MVP評価とMVP後の品質施策の正本 |
+| [quality.md](docs/quality.md) | content記録、Hosted Agentの評価設計、運用指標とMVP後の品質施策の正本 |
 | [implementation-plan.md](docs/implementation-plan.md) | 着手条件、実装順、vertical slice、完了条件の正本 |
 | [repository-policy.md](docs/repository-policy.md) | 個人開発に見合う設計範囲、公開repository、IaC、供給網に関する恒久ポリシー |
 | [research/implementation-readiness-2026-08-11.md](docs/research/implementation-readiness-2026-08-11.md) | 調査時点の根拠・capacity snapshot・統合判断の記録。現行設計の正本ではない |

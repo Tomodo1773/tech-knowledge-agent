@@ -53,7 +53,13 @@ services:
           version: '2026-07-09'
         sku:
           name: GlobalStandard
-          capacity: 10
+          # 10 (10K TPM) throttled the Foundry evaluation: it runs every case in
+          # parallel, so the Agent's own calls and the judge model's calls pile onto
+          # this one deployment and 3 of 10 rows came back unscored with a 429
+          # (docs/quality.md#制約). GlobalStandard bills per token and capacity is a
+          # rate ceiling, not a reservation, so this costs nothing on its own. The
+          # subscription quota for this model is 1000.
+          capacity: 100
       - name: text-embedding-3-small
         model:
           format: OpenAI
