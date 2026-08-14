@@ -1,4 +1,4 @@
-"""The Function App's two telemetry channels, per [telemetry.md](../../../docs/telemetry.md).
+"""The Function App's two telemetry channels.
 
 Spans are the primary channel: fixed low-cardinality names so they group in Application
 Insights, an allowlist of attribute keys, and W3C propagation across the Queue.

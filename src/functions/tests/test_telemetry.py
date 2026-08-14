@@ -54,7 +54,7 @@ def spans() -> Any:
 
 
 def test_span_attributes_outside_the_allowlist_are_refused() -> None:
-    # quality.md forbids secrets, headers, and event bodies on custom spans.
+    # Custom spans must not contain secrets, headers, or event bodies.
     with (
         pytest.raises(UnsafeAttributeError, match="slack.signing_secret"),
         traced(SPAN_SLACK_MESSAGE_SEND, **{"slack.signing_secret": "value"}),

@@ -42,7 +42,7 @@ class EvalCase:
         """The one source the deterministic citation check compares against.
 
         Empty for no-evidence cases, which have nothing to compare. How that
-        emptiness should be scored is still open (docs/quality.md#未解決).
+        emptiness should be scored remains open.
         """
         return self.expected_sources[0] if self.expected_sources else ""
 

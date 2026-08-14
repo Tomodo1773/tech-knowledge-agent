@@ -151,8 +151,8 @@ resource functionAgentConsumer 'Microsoft.Authorization/roleAssignments@2022-04-
 // The documented OpenAI v1 inference endpoint is the account root, and a project-scoped
 // assignment does not reach it because RBAC does not inherit from a child project up to
 // its account. Scoped to the account but with the narrowest inference role rather than
-// reusing the broad Foundry User here. Evidence and the route decision are in
-// docs/architecture.md#embeddingがaccount-scopeを要求する理由.
+// reusing the broad Foundry User here. The route decision is recorded in
+// docs/adr/0004-foundry-runtime-boundaries.md.
 resource functionAccountInference 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: foundryAccount
   name: guid(foundryAccount.id, functionPrincipalId, cognitiveServicesOpenAIUserRoleId)

@@ -20,7 +20,7 @@ SLACK_SIGNATURE_MAX_AGE_SECONDS = 300
 SLACK_MARKDOWN_LIMIT = 4000
 _SOURCES_SEPARATOR = "\n\n## Sources\n"
 
-# The audit vocabulary is the one architecture.md fixes, not the selector's internals.
+# Keep the audit vocabulary stable instead of exposing the selector's internals.
 _AUDIT_REASONS = {
     "team_not_allowed": "unauthorized_source",
     "user_not_allowed": "unauthorized_source",

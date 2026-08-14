@@ -2,8 +2,11 @@
 
     uv run --project src/functions --no-sync python scripts/run-foundry-evaluation.py
 
-The eval and its runs show up on the project's Evaluations page. Design and the reason
-each criterion exists are in docs/quality.md#評価設計.
+The eval and its runs show up on the project's Evaluations page. It measures the final
+user-visible answer because a component can pass while the delivered answer fails, and
+component-only evaluation would couple the suite to the current internal design. Semantic
+answer quality and deterministic source presence are scored separately so their failure
+modes do not blur together.
 
 The eval object carries the schema and the testing criteria, and cannot be edited once
 runs hang off it. So the criteria are fingerprinted: an eval whose fingerprint matches
@@ -11,8 +14,10 @@ the current files is reused, and changing a prompt, a threshold or the judge mod
 creates a new one. Runs stay comparable within a fingerprint and never straddle a
 change of criteria.
 
-This is a diagnostic, not a deploy gate: it exits 0 whenever the run completed, whatever
-the scores are. Failures are read from the printed table and the Foundry report.
+This is a diagnostic for comparing improvements, not a deploy gate: probabilistic external
+scoring does not block delivery, so regressions are not rejected automatically and a person
+must compare the printed table or Foundry report. The command exits 0 whenever the run
+completed, whatever the scores are.
 
 Requires FOUNDRY_PROJECT_ENDPOINT, AZURE_AI_MODEL_DEPLOYMENT_NAME (the judge model), and
 a signed-in identity with Foundry User on the project -- Foundry Project Manager, what

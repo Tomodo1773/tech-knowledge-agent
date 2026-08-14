@@ -73,7 +73,7 @@ module storage 'br/public:avm/res/storage/storage-account:0.33.0' = {
     publicNetworkAccess: 'Enabled'
     // This AVM version leaves networkAcls unset, which resolves to defaultAction Deny and
     // blocks both the Flex Consumption host and azd deploy's local zip upload. There is no
-    // VNet in this individual-dev MVP (docs/platform-and-operations.md#ローカル開発), so allow
+    // VNet in this individual-dev MVP, so allow
     // public access explicitly instead of listing IP rules.
     networkAcls: {
       defaultAction: 'Allow'

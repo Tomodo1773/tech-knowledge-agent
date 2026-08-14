@@ -49,7 +49,7 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.14.0' = {
     // AuditEvent is the one log with no platform-metric equivalent, and it is how a
     // failed Key Vault reference from the Function App gets diagnosed. Everything the
     // AVM 'allLogs' default would add is either policy noise or already covered by the
-    // OpenTelemetry spans in docs/quality.md.
+    // application OpenTelemetry spans.
     diagnosticSettings: [
       {
         name: 'send-to-workspace'
@@ -68,7 +68,7 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.14.0' = {
       }
       // Deployer data-plane access. Provisioning already requires Owner or RBAC
       // Administrator to create role assignments, so this grants nothing the deployer
-      // could not self-assign; it makes the bootstrap in docs/platform-and-operations.md
+      // could not self-assign; it makes the bootstrap
       // reproducible instead of a hidden manual step. Secrets Officer is the narrowest
       // built-in role that can write a secret. Remove this entry to bootstrap by hand.
       {

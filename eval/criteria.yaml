@@ -1,10 +1,10 @@
-# Foundryのbatch evaluationへ渡す判定器の定義。設計の正本はdocs/quality.md#評価軸と判定器。
+# Foundryのbatch evaluationへ渡す判定器の定義。
 #
 # このファイルとpromptの内容から指紋を計算し、指紋ごとに評価の枠を作り分ける。ここを変えると
 # 次の実行から新しい枠になるので、採点基準を変えたrunと変える前のrunが混ざることはない。
 #
-# 判定modelのdeployment名はここへ書かず、環境変数AZURE_AI_MODEL_DEPLOYMENT_NAMEから取る
-# (docs/repository-policy.md)。名前も指紋に含めるため、modelを差し替えても枠は分かれる。
+# 判定modelのdeployment名はここへ書かず、環境変数AZURE_AI_MODEL_DEPLOYMENT_NAMEから取る。
+# 名前も指紋に含めるため、modelを差し替えても枠は分かれる。
 
 stage: 1
 

@@ -59,8 +59,7 @@ foreach ($block in $avmBlocks) {
 # bills, or succeeds and widens access, and the only signal is the next invoice or an
 # audit. Six have been found that way already, three of them only after a deploy. These
 # are the parameters where the default is known to conflict with the MVP's cost, exposure,
-# or privacy policy, so dropping one has to fail here instead of in Azure. The reviewed
-# default of every parameter is recorded in docs/platform-and-operations.md#avmの既定値.
+# or privacy policy, so dropping one has to fail here instead of in Azure.
 $requiredModuleParameters = [ordered]@{
     'avm/res/document-db/database-account'   = @(
         'zoneRedundant', 'backupPolicyType', 'totalThroughputLimit', 'capabilitiesToAdd'

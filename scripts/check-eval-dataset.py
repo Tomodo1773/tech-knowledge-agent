@@ -3,7 +3,7 @@
     uv run --project src/functions --no-sync python scripts/check-eval-dataset.py
 
 Local only: it reads no Azure resource and calls no agent. Running the cases against
-the deployed agent is run-foundry-evaluation.py's job (docs/quality.md#評価設計).
+the deployed agent is run-foundry-evaluation.py's job.
 """
 
 from __future__ import annotations

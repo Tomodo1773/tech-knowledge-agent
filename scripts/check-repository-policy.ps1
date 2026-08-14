@@ -73,7 +73,7 @@ if ($rejectedProbe -notmatch $deployedEndpointPattern) {
 if ('.claude/skills/microsoft-foundry/SKILL.md' -notmatch $vendoredPathPattern) {
     throw 'The vendored-skill exemption must keep matching files under .claude/skills/.'
 }
-foreach ($ownPath in @('docs/telemetry.md', 'src/agent/main.py', 'infra/main.bicep', 'azure.yaml')) {
+foreach ($ownPath in @('docs/adr/0005-observability-boundary.md', 'src/agent/main.py', 'infra/main.bicep', 'azure.yaml')) {
     if ($ownPath -match $vendoredPathPattern) {
         throw "The vendored-skill exemption must not cover this project's own file: $ownPath"
     }

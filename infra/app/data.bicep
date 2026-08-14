@@ -23,12 +23,12 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.21.0' = {
     enableMultipleWriteLocations: false
     enableAutomaticFailover: false
     // Both of the following default the opposite way in this AVM version. A single-user
-    // MVP does not buy availability zones (docs/repository-policy.md), and the default
+    // MVP does not buy availability zones, and the default
     // Continuous30Days tier bills for backup storage. Periodic keeps the two free copies.
     zoneRedundant: false
     backupPolicyType: 'Periodic'
     // The AVM default is -1, unlimited. Free Tier covers the first 1,000 RU/s on the
-    // account (docs/platform-and-operations.md#コストと日常運用) and the single container
+    // account and the single container
     // below provisions 400, so this caps the account at the free allowance instead of
     // letting a later container or an autoscale setting start billing unnoticed. Raising
     // it is a deliberate one-line change; exceeding it silently is not possible.
@@ -87,7 +87,7 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.21.0' = {
         scope: containerScope
       }
       // Local authentication is disabled, so the deployer needs a data-plane assignment
-      // to run the Functions locally (docs/platform-and-operations.md#ローカル開発) and to
+      // to run the Functions locally and to
       // inspect chunks during the live gates. Scoped to the same container as the
       // Function App, not the account.
       {
