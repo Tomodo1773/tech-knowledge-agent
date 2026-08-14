@@ -39,6 +39,10 @@ var cognitiveServicesOpenAIUserRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 )
+var foundryAgentConsumerRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  'eed3b665-ab3a-47b6-8f48-c9382fb1dad6'
+)
 
 module account 'br/public:avm/res/cognitive-services/account:0.18.0' = {
   name: 'foundry-account'
@@ -129,13 +133,18 @@ resource projectFoundryUser 'Microsoft.Authorization/roleAssignments@2022-04-01'
   }
 }
 
-resource functionProjectUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+// The Worker's only project-scoped call is responses.create on the agent endpoint, which
+// the docs cover with endpoints/interact/action -- the single data action in this role.
+// Foundry User would also grant Microsoft.CognitiveServices/* on the project, including
+// agent write. Everything the Worker sends to the account root is authorized by the
+// separate assignment below instead.
+resource functionAgentConsumer 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: project
-  name: guid(project.id, functionPrincipalId, foundryUserRoleId)
+  name: guid(project.id, functionPrincipalId, foundryAgentConsumerRoleId)
   properties: {
     principalId: functionPrincipalId
     principalType: 'ServicePrincipal'
-    roleDefinitionId: foundryUserRoleId
+    roleDefinitionId: foundryAgentConsumerRoleId
   }
 }
 

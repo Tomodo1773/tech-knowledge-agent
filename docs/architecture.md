@@ -124,20 +124,20 @@ Hosted AgentはPython 3.13のAgent Frameworkで`ResponsesHostServer`を起動す
 
 | principal | 必要な権限 |
 |---|---|
-| Function App MI | Storage Blob Data Owner、Storage Queue Data Contributor、Storage Table Data Contributor、`chunks` container scopeのCosmos DB Built-in Data Contributor、Key Vault Secrets User、Foundry project scopeのFoundry User、Foundry account scopeのCognitive Services OpenAI User、Application Insights scopeのMonitoring Metrics Publisher |
+| Function App MI | Storage Blob Data Owner、Storage Queue Data Contributor、Storage Table Data Contributor、`chunks` container scopeのCosmos DB Built-in Data Contributor、Key Vault Secrets User、Foundry project scopeのFoundry Agent Consumer、Foundry account scopeのCognitive Services OpenAI User、Application Insights scopeのMonitoring Metrics Publisher |
 | Hosted Agent identity | `chunks` container scopeのCosmos DB Built-in Data Reader、Foundry account scopeのCognitive Services OpenAI User、Application Insights scopeのMonitoring Metrics Publisher |
 | Foundry Project MI | Foundry account scopeのFoundry User、Log Analytics workspace scopeのLog Analytics Data Reader、Application Insights scopeのMonitoring Metrics Publisher |
 | deploy実行者 | Foundry project scopeのFoundry Project Manager、Key Vault Secrets Officer、`chunks` container scopeのCosmos DB Built-in Data Contributor、Storage Blob / Queue / Table Data Contributor |
 
 deploy実行者へのdata-plane roleは、local authを無効にした結果として必要になるものである。Key Vault Secrets Officerがなければ[Bootstrap](platform-and-operations.md#bootstrap)のsecret投入ができず、CosmosとStorageのdata-plane roleがなければ[ローカル開発](platform-and-operations.md#ローカル開発)とliveゲートでの状態確認ができない。role assignmentの作成自体にOwnerまたはRBAC Administratorが要るため、これらは実行者が自分で付与できる権限を明示化したものであり、権限の拡大ではない。範囲はFunction App MIと同じcontainer scopeに揃え、Storageは実行者だけContributorにする。
 
-Function App MIのFoundry Userは、Agent Workerのagent呼び出しに使う。Foundry Project MIはproject endpointからaccountのmodel deploymentを呼ぶためFoundry Userを使う。role名とscopeの根拠は[実装開始時の現行仕様確認](research/implementation-current-spec-2026-08-11.md#rbac差分)に記録する。
+Function App MIがproject scopeで行うのはAgent Workerのagent呼び出し（agent endpointへの`responses.create`）だけである。公式はこのruntime interactionに必要なdata actionを`Microsoft.CognitiveServices/accounts/AIServices/endpoints/interact/action`と定め、それだけを持つ`Foundry Agent Consumer`をagentを作成・変更しないprincipalの最小権限roleとして挙げている（[Hosted agent permissions reference](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agent-permissions)）。Workerはagentを作らないため、`Microsoft.CognitiveServices/*`を含む広い`Foundry User`ではなくこのroleを使う。Foundry Project MIはproject endpointからaccountのmodel deploymentを呼ぶためFoundry Userを使う。role名とscopeの根拠は[実装開始時の現行仕様確認](research/implementation-current-spec-2026-08-11.md#rbac差分)に記録する（同記録はFunction App MIについてFoundry Userと書いた時点のもので、現行はこの節を正とする）。
 
 ### embeddingがaccount scopeを要求する理由
 
 OpenAI v1 APIとしてMicrosoftが文書化しているinference endpointは`https://<resource>.services.ai.azure.com/openai/v1/`であり、**project-scopedなinference routeは文書化されていない**（[Endpoints for Microsoft Foundry Models](https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-models/concepts/endpoints)）。SDKの`AIProjectClient.get_openai_client()`が既定で組み立てるproject route（`/api/projects/<project>/openai/v1/`）はchat completionsを返すが、embeddingsには**deployment名の実在にかかわらず本文が空の404**を返す。同じproject routeのchatに存在しないdeployment名を投げると`DeploymentNotFound`が返るので、この404はdeployment解決の失敗ではなくroute自体がoperationを持たないことを示す。したがってembeddingはaccount rootへ向ける。
 
-RBACはaccountからprojectへは継承されるが、**projectからaccountへは遡らない**。Hosted Agent identityがprojectに対して持つimplicit access、およびFunction App MIのproject scopeのFoundry Userは、いずれもaccount rootのinferenceに届かない。そのため両者へFoundry account scopeの`Cognitive Services OpenAI User`を別途付ける。embeddingを許す最小のroleであり、広いFoundry Userをaccount scopeへ広げる代わりに使っている。
+RBACはaccountからprojectへは継承されるが、**projectからaccountへは遡らない**。Hosted Agent identityがprojectに対して持つimplicit access、およびFunction App MIのproject scopeのFoundry Agent Consumerは、いずれもaccount rootのinferenceに届かない。そのため両者へFoundry account scopeの`Cognitive Services OpenAI User`を別途付ける。embeddingを許す最小のroleであり、広いFoundry Userをaccount scopeへ広げる代わりに使っている。
 
 Sync Functionのembedding呼び出しと、Agentの`knowledge_search`が検索前に行うquery embeddingの両方がこの経路を通る。付与が漏れると前者はindex更新の失敗、後者は検索そのものの失敗として現れる。
 

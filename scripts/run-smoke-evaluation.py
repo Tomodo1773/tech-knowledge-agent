@@ -5,8 +5,10 @@ if citations miss. Failures are investigated with the printed answer and the tra
 
     uv run --project src/functions --no-sync python scripts/run-smoke-evaluation.py
 
-Requires FOUNDRY_PROJECT_ENDPOINT and a signed-in identity with Foundry User on the
-project. Resolves the Agent exactly as the Worker does so the two cannot drift.
+Requires FOUNDRY_PROJECT_ENDPOINT and a signed-in identity that can interact with the
+agent endpoint on the project -- Foundry Agent Consumer is the least-privilege role, and
+Foundry Project Manager (what the deployer holds) also covers it. Resolves the Agent
+exactly as the Worker does so the two cannot drift.
 """
 
 from __future__ import annotations
