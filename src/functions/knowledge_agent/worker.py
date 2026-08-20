@@ -3,20 +3,39 @@
 from __future__ import annotations
 
 import logging
+import traceback
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Protocol
+
+from opentelemetry.trace import SpanKind
 
 from knowledge_agent.contracts import ConversationStateEntity, QueueMessage, conversation_row_key
 from knowledge_agent.state import ConversationState, is_conversation_continuable
+from knowledge_agent.telemetry import SPAN_AGENT_INVOKE, traced
 
 logger = logging.getLogger(__name__)
 
 
 class AgentInvocationError(RuntimeError):
     """Sanitized Hosted Agent failure that is safe for Function host logs."""
+
+
+def _failure_site(error: BaseException) -> str:
+    """Locate a failure innermost-first, quoting nothing the exception carried.
+
+    A file, a line, and a function name are not content. An exception message can be,
+    so it never appears here.
+    """
+    # Three frames separate our own code from the SDK's and show which layer raised,
+    # without turning one failure into a wall of log lines.
+    frames = traceback.extract_tb(error.__traceback__)[-3:]
+    return " <- ".join(
+        f"{Path(frame.filename).name}:{frame.lineno} {frame.name}" for frame in reversed(frames)
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,18 +70,22 @@ class HostedAgentClient:
         request: dict[str, Any] = {"input": question}
         if previous_response_id is not None:
             request["previous_response_id"] = previous_response_id
-        # AIProjectInstrumentor traces responses.create itself, producing a client span
-        # that carries gen_ai.response.id, the messages, and the duration. A span of our
-        # own around this call measured the identical interval and repeated the response
-        # id under a second name, so it is gone. The same instrumentor injects traceparent
-        # into this request, so nothing is added here either.
+        # The SDK's own Responses instrumentation is switched off in the deployment
+        # (ADR 0007), so this span is the worker's only record of the Agent request. It
+        # is also the context the traceparent hook injects, which is what keeps the
+        # Agent's spans below this one instead of beside it.
         try:
-            response = self._client.responses.create(**request)
+            with traced(SPAN_AGENT_INVOKE, kind=SpanKind.CLIENT):
+                response = self._client.responses.create(**request)
         except Exception as error:
-            # `from None` keeps the response body out of the host log and takes the
-            # only clue to the failure with it. The class name separates auth from
-            # timeout from throttling and quotes nothing.
-            logger.error("agent request failed: %s", type(error).__name__)
+            # `from None` keeps the response body out of the host log. The class name
+            # alone did not say where a failure came from, which left the AttributeError
+            # behind ADR 0007 untraceable, so the innermost frames go with it.
+            logger.error(
+                "agent request failed: %s at %s",
+                type(error).__name__,
+                _failure_site(error),
+            )
             raise AgentInvocationError("Hosted Agent request failed") from None
 
         response_id = getattr(response, "id", None)
