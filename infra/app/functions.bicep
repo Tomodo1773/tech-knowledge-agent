@@ -226,17 +226,15 @@ module functionApp 'br/public:avm/res/web/site:0.24.0' = {
           // exporter's own records, so delivering telemetry produces telemetry. Must stay
           // equal to LOGGER_NAMESPACE in knowledge_agent/telemetry.py.
           PYTHON_APPLICATIONINSIGHTS_LOGGER_NAME: 'knowledge_agent'
-          // configure_azure_monitor already calls AIProjectInstrumentor().instrument();
-          // this preview gate is all that stands between the call and a client span for
-          // the worker's responses.create, which today has no gen_ai span at all. The
-          // instrumentor patches openai.resources.responses.Responses at class level, so
-          // it covers the hand-built AzureOpenAI client too.
+          // Kept for one effect only: with this on, get_openai_client registers the hook
+          // that injects traceparent, which is what makes the Agent's spans children of
+          // the worker's instead of siblings. The Responses instrumentation it also
+          // brings is switched off on the next line.
           AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING: 'true'
-          // The Agent's own spans record the tool call's arguments and result, but nothing
-          // there records the question or the final answer: the Agent Framework emits no
-          // span for the model call itself. This client span is the only place those two
-          // exist, so content recording belongs here rather than being left to the Agent.
-          OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: 'true'
+          // Preview instrumentation Microsoft does not recommend for production, and the
+          // only thing the two double-answered questions had in common. ADR 0007 records
+          // why it is off and what went with it.
+          AZURE_TRACING_GEN_AI_INSTRUMENT_RESPONSES_API: 'false'
           AZURE_CLIENT_ID: functionIdentityClientId
           AZURE_STORAGE_ACCOUNT_NAME: storageAccountName
           // The database and container names are fixed contract constants in

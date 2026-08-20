@@ -16,12 +16,14 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind
 
 from knowledge_agent.contracts import EventStateEntity, QueueMessage, TraceContext
 from knowledge_agent.slack_events import handle_slack_request
 from knowledge_agent.telemetry import (
     LOGGER_NAMESPACE,
     SAFE_ATTRIBUTES,
+    SPAN_AGENT_INVOKE,
     SPAN_QUEUE_PUBLISH,
     SPAN_SLACK_EVENT_RECEIVE,
     SPAN_SLACK_MESSAGE_SEND,
@@ -109,7 +111,20 @@ def test_every_app_log_record_lands_in_the_collected_subtree() -> None:
     assert "logging.getLogger" not in entry_point.read_text(encoding="utf-8")
 
 
-def test_the_agent_failure_cause_survives_as_a_type_name(spans: Any, caplog: Any) -> None:
+def test_the_agent_request_is_recorded_as_one_client_span(spans: Any) -> None:
+    """The SDK's own span for this call is switched off in the deployment (ADR 0007)."""
+    from knowledge_agent.worker import HostedAgentClient
+
+    answer = SimpleNamespace(id="resp_1", output_text="Answer")
+    client = SimpleNamespace(responses=SimpleNamespace(create=lambda **_: answer))
+    HostedAgentClient(client).ask("Q", previous_response_id=None)
+
+    finished = spans.get_finished_spans()
+    assert [span.name for span in finished] == [SPAN_AGENT_INVOKE]
+    assert finished[0].kind is SpanKind.CLIENT
+
+
+def test_the_agent_failure_survives_as_a_type_and_a_site(spans: Any, caplog: Any) -> None:
     """`from None` throws the cause away, so this log line is the only record of it."""
     from knowledge_agent.worker import AgentInvocationError, HostedAgentClient
 
@@ -124,8 +139,12 @@ def test_the_agent_failure_cause_survives_as_a_type_name(spans: Any, caplog: Any
     ):
         HostedAgentClient(client).ask("Q", previous_response_id=None)
 
-    assert caplog.messages == ["agent request failed: TimeoutError"]
-    # The class name is the diagnosis; the exception's own text may quote the payload.
+    assert len(caplog.messages) == 1
+    assert caplog.messages[0].startswith("agent request failed: TimeoutError at ")
+    assert "test_telemetry.py" in caplog.messages[0]
+    assert "create" in caplog.messages[0]
+    # The class name and the frames behind it are the diagnosis; the exception's own
+    # text may quote the payload, so it stays out of the line.
     assert "question text" not in caplog.text
 
 

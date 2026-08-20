@@ -30,8 +30,7 @@ SPAN_EMBEDDING_CREATE = "embedding.create"
 SPAN_COSMOS_UPSERT = "cosmos.upsert"
 SPAN_SLACK_EVENT_RECEIVE = "slack.event.receive"
 SPAN_QUEUE_PUBLISH = "queue.publish"
-# No span for the Agent request: AIProjectInstrumentor traces responses.create and emits
-# the gen_ai attributes, so anything written here would only shadow it.
+SPAN_AGENT_INVOKE = "agent.invoke"
 SPAN_SLACK_MESSAGE_SEND = "slack.message.send"
 
 # Identifiers, counts, and outcomes only. Questions, answers, tokens, and Slack

@@ -1,6 +1,6 @@
 # ADR 0006: GenAI contentを記録する
 
-Status: Accepted
+Status: Accepted（Functions側の記録はADR 0007で撤去）
 
 ## Context
 

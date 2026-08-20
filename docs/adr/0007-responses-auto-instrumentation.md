@@ -1,0 +1,23 @@
+# ADR 0007: Responses APIの自動計装を止める
+
+Status: Accepted
+
+## Context
+
+Slack由来の質問12件のうち2件で、Hosted Agentが回答を返した直後にFunctions側がAttributeErrorで落ち、Queueの再配信が同じ質問をもう一度モデルへ投げた。失敗した2件は、Functions側のclient spanが記録されなかった呼び出しと完全に一致する。cold startの有無や待ち時間では成功と失敗を区別できない。
+
+この計装はpreviewで、Microsoftは本番利用を推奨していない。有効にすると応答objectがwrapperに包まれて属性が消え、AttributeErrorになる不具合が公開されており、案内されている回避策は計装の無効化である。ただしAttributeErrorの発生箇所は特定できていない。失敗時に例外の連鎖を切っていたため、手がかりが残っていない。
+
+## Decision
+
+Functions側でResponses APIの自動計装を止める。GenAI tracing自体は残す。`get_openai_client`がtraceparentを注入するhookを登録するのがそのgateに依存しており、外すとAgentのspanがworkerのspanから切れるため。
+
+失われるclient spanの代わりに、workerがAgent requestのspanを自ら持つ。失敗のlogには例外のtype名に加えて発生位置（file、line、関数名を内側から3フレーム）を残し、例外のmessageは残さない。Functions側のcontent記録は自動計装と一緒に効果を失うため撤去する。
+
+Queue再配信でAgentを呼ばない案は、重複課金は消えるが失敗した質問が答えを失うだけで、原因にも同期待ちにも触れないため採らない。background responsesへの作り替えは、応答IDを先に確保して再配信でもモデルを呼び直さない構造にできるが、原因が計装ならば不要な作り替えになるため、この決定の結果を見てから判断する。
+
+## Consequences
+
+Functions側のgen_ai属性が消え、質問と最終回答はHosted Agent側のlogだけに残る。ADR 0006が置いた記録場所のうちFunctions側が失われる。
+
+再発した場合は、失敗位置のlogから計装以外の原因かどうかを判別できる。応答受領後の失敗がモデル呼び出しのやり直しに直結する構造は残るため、再発するならbackground responsesへ進む。
