@@ -43,6 +43,7 @@ jobs:
           uv run --project src/functions --no-sync pytest src/functions/tests
           uv export --quiet --project src/functions --frozen --no-dev --no-emit-project --output-file src/functions/requirements.txt
           uv run --project src/functions --no-sync python scripts/check-python-package-layout.py src/functions .funcignore function_app.py host.json requirements.txt
+          uv run --project src/functions --no-sync python scripts/check-eval-dataset.py
 
       - name: Sync Agent dependencies
         run: sfw uv sync --project src/agent --locked
