@@ -419,7 +419,10 @@ def _print_results(client: Any, *, eval_id: str, run: Any) -> None:
     print(f"report     : {run.report_url}")
     print(f"counts     : {run.result_counts}")
     for criterion in run.per_testing_criteria_results:
-        print(f"  {criterion.testing_criteria}: passed={criterion.passed} failed={criterion.failed}")
+        print(
+            f"  {criterion.testing_criteria}: "
+            f"passed={criterion.passed} failed={criterion.failed}"
+        )
 
     print("\ncase                      criterion                 passed  score  note")
     errors: list[str] = []
@@ -454,12 +457,20 @@ def _print_results(client: Any, *, eval_id: str, run: Any) -> None:
             print(f"  {message}")
 
 
-def previous_run(client: Any, *, eval_id: str, run_id: str) -> Any | None:
-    """The newest completed run under the same criteria, other than the one just made."""
+def previous_run(
+    client: Any,
+    *,
+    eval_id: str,
+    run_id: str,
+    dataset_version: str,
+) -> Any | None:
+    """The newest completed run over the same criteria and question set."""
     finished = [
         existing
         for existing in client.evals.runs.list(eval_id=eval_id, limit=100)
-        if existing.id != run_id and existing.status == "completed"
+        if existing.id != run_id
+        and existing.status == "completed"
+        and (existing.metadata or {}).get("datasetVersion") == dataset_version
     ]
     return max(finished, key=lambda existing: existing.created_at, default=None)
 
@@ -468,7 +479,12 @@ def _print_comparison(project: Any, client: Any, *, eval_id: str, run: Any) -> N
     """Let the service compare this run with the last one instead of reading two tables."""
     from azure.ai.projects.models import EvaluationComparisonInsightRequest, Insight
 
-    baseline = previous_run(client, eval_id=eval_id, run_id=run.id)
+    baseline = previous_run(
+        client,
+        eval_id=eval_id,
+        run_id=run.id,
+        dataset_version=(run.metadata or {}).get("datasetVersion", ""),
+    )
     if baseline is None:
         print("\nNo earlier completed run under these criteria, so there is nothing to compare.")
         return
@@ -643,6 +659,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"started run {run.id} over {len(cases)} cases; waiting for it to finish")
 
     run = _await_run(client, eval_id=evaluation.id, run_id=run.id)
+    if run.status != "completed":
+        print(f"\nstatus     : {run.status}")
+        print(f"report     : {run.report_url}")
+        print(f"Evaluation run ended as {run.status}.", file=sys.stderr)
+        return 1
     _print_results(client, eval_id=evaluation.id, run=run)
     _print_comparison(project, client, eval_id=evaluation.id, run=run)
     return 0

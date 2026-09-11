@@ -4,6 +4,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -286,8 +287,43 @@ def test_the_catalog_prompt_addresses_its_inputs_by_the_schema_field_names() -> 
     assert "{{sample." not in prompt
 
 
-def test_the_committed_dataset_matches_the_contract_and_stays_around_ten_cases() -> None:
+def test_previous_run_uses_only_the_same_question_set_version() -> None:
+    runs = [
+        SimpleNamespace(
+            id="older-same",
+            status="completed",
+            created_at=1,
+            metadata={"datasetVersion": "v1"},
+        ),
+        SimpleNamespace(
+            id="newer-other",
+            status="completed",
+            created_at=3,
+            metadata={"datasetVersion": "v2"},
+        ),
+        SimpleNamespace(
+            id="newer-same",
+            status="completed",
+            created_at=2,
+            metadata={"datasetVersion": "v1"},
+        ),
+    ]
+    client = SimpleNamespace(
+        evals=SimpleNamespace(runs=SimpleNamespace(list=lambda **_: runs))
+    )
+
+    baseline = runner.previous_run(
+        client,
+        eval_id="eval-id",
+        run_id="current",
+        dataset_version="v1",
+    )
+
+    assert baseline.id == "newer-same"
+
+
+def test_the_committed_dataset_matches_the_contract_and_has_ten_cases() -> None:
     cases = eval_dataset.load_dataset(DATASET)
 
-    assert 8 <= len(cases) <= 16
+    assert len(cases) == 10
     assert all(case.expected_behavior for case in cases)
