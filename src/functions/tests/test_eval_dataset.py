@@ -4,6 +4,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -96,31 +97,124 @@ def test_duplicate_ids_and_empty_datasets_are_rejected(tmp_path: Path) -> None:
         eval_dataset.load_dataset(blank)
 
 
-def test_rows_carry_the_flattened_source_the_string_check_compares() -> None:
+def test_items_carry_the_flattened_source_the_string_check_compares() -> None:
     cases = (
         eval_dataset.parse_case(_case(), line_number=1),
         eval_dataset.parse_case(_case(id="none", caseType="no-evidence", expectedSources=[]),
                                 line_number=2),
     )
 
-    rows = runner.build_rows(cases)
+    items = runner.build_items(cases, eval_dataset.load_tool_definitions())
 
-    assert rows[0]["item"]["expectedSource"] == "articles/sync.md"
-    assert rows[1]["item"]["expectedSource"] == ""
-    assert set(rows[0]["item"]) == set(runner.data_source_config()["item_schema"]["properties"])
+    assert items[0]["expectedSource"] == "articles/sync.md"
+    assert items[1]["expectedSource"] == ""
+    assert set(items[0]) == set(runner.data_source_config()["item_schema"]["properties"])
+
+
+def test_each_dataset_line_is_the_item_itself() -> None:
+    """A line wrapped in {"item": ...} becomes the item, and the templates resolve to
+    nothing, which reaches the agent as an empty question."""
+    cases = (eval_dataset.parse_case(_case(), line_number=1),)
+
+    items = runner.build_items(cases, eval_dataset.load_tool_definitions())
+    line = json.loads(runner.dataset_content(items).splitlines()[0])
+
+    assert "item" not in line
+    assert line["query"] == "記事の同期はいつ動く？"
+
+
+def test_every_item_carries_the_tool_definitions_the_evaluators_need() -> None:
+    """The tool evaluators only receive definitions through an item field."""
+    cases = (eval_dataset.parse_case(_case(), line_number=1),)
+    definitions = eval_dataset.load_tool_definitions()
+
+    items = runner.build_items(cases, definitions)
+
+    assert [definition["name"] for definition in definitions] == ["knowledge_search"]
+    assert items[0]["toolDefinitions"] == [dict(d) for d in definitions]
+    schema = runner.data_source_config()["item_schema"]
+    assert schema["properties"]["toolDefinitions"] == {"type": "array"}
+    assert "toolDefinitions" in schema["required"]
+
+
+@pytest.mark.parametrize(
+    "document",
+    ["[]", "{}", "[{\"description\": \"no name\"}]", "[{\"name\": \"knowledge_search\"}]", "["],
+)
+def test_unusable_tool_definitions_are_rejected(tmp_path: Path, document: str) -> None:
+    path = tmp_path / "tool-definitions.json"
+    path.write_text(document, encoding="utf-8")
+
+    with pytest.raises(eval_dataset.EvalDatasetError):
+        eval_dataset.load_tool_definitions(path)
+
+
+def test_the_question_set_version_follows_its_content() -> None:
+    """A version that is a digest keeps re-registration from adding a version."""
+    cases = (eval_dataset.parse_case(_case(), line_number=1),)
+    items = runner.build_items(cases, eval_dataset.load_tool_definitions())
+    changed = runner.build_items(
+        (eval_dataset.parse_case(_case(query="別の質問"), line_number=1),),
+        eval_dataset.load_tool_definitions(),
+    )
+
+    version = runner.dataset_version(runner.dataset_content(items))
+
+    assert version == runner.dataset_version(runner.dataset_content(items))
+    assert version != runner.dataset_version(runner.dataset_content(changed))
 
 
 def test_the_committed_criteria_build_the_two_stage_one_graders() -> None:
     stage, criteria = runner.load_criteria(CRITERIA, judge_model="judge-deployment")
 
     assert stage == 1
-    assert [criterion["type"] for criterion in criteria] == ["score_model", "string_check"]
+    assert [criterion["type"] for criterion in criteria] == [
+        "score_model",
+        "string_check",
+        *["azure_ai_evaluator"] * 6,
+    ]
+    # The tool evaluators receive their definitions from the dataset item, not the target.
+    names = [c["evaluator_name"] for c in criteria if c["type"] == "azure_ai_evaluator"]
+    # A built-in evaluator without the prefix is a 404 at create time.
+    assert all(name.startswith("builtin.") for name in names)
+    tool_call = next(c for c in criteria if c.get("evaluator_name") == "builtin.tool_call_accuracy")
+    # Without tool_calls the evaluator finds nothing to judge and skips every row, and
+    # the final text alone carries no tool output.
+    assert tool_call["data_mapping"] == {
+        "query": "{{item.query}}",
+        "response": "{{sample.output_items}}",
+        "tool_calls": "{{sample.tool_calls}}",
+        "tool_definitions": "{{item.toolDefinitions}}",
+    }
+    # A built-in that does not name a judge model is rejected at create time, and naming
+    # it keeps a change of model splitting the eval.
+    for criterion in criteria:
+        if criterion["type"] == "azure_ai_evaluator":
+            assert criterion["initialization_parameters"] == {
+                "deployment_name": "judge-deployment"
+            }
     score_model = criteria[0]
     assert score_model["model"] == "judge-deployment"
     assert score_model["pass_threshold"] == 4
     # The committed prompt is what the judge sees, so it must reach the payload.
     assert "点数の意味" in score_model["input"][0]["content"]
     assert "{{sample.output_text}}" in score_model["input"][1]["content"]
+
+
+def test_a_criterion_that_measured_nothing_is_told_apart_from_a_real_failure() -> None:
+    """A skipped built-in comes back with a null score, and Foundry counts it as passed."""
+    skipped = {
+        "name": "tool_call_accuracy",
+        "passed": None,
+        "score": None,
+        "status": "skipped",
+        "label": "not_applicable",
+        "reason": "Not applicable: 評価対象のツール呼び出しが存在しません。",
+    }
+    scored = {"name": "relevance", "passed": True, "score": 5.0, "status": "completed"}
+
+    assert runner.unmeasured(skipped).startswith("Not applicable")
+    assert runner.unmeasured(scored) == ""
 
 
 def test_a_grader_that_could_not_score_is_told_apart_from_a_real_failure() -> None:
@@ -181,8 +275,55 @@ def test_the_fingerprint_changes_only_when_the_criteria_change() -> None:
     assert runner.fingerprint(config, criteria) != runner.fingerprint(config, loosened)
 
 
-def test_the_committed_dataset_matches_the_contract_and_stays_around_ten_cases() -> None:
+def test_the_catalog_prompt_addresses_its_inputs_by_the_schema_field_names() -> None:
+    """Run templates are not the catalog's syntax, and the output contract is enforced."""
+    _, criteria = runner.load_criteria(CRITERIA, judge_model="judge-deployment")
+
+    prompt = runner.catalog_prompt(criteria[0])
+
+    for field in runner.CATALOG_FIELDS:
+        assert "{{" + field + "}}" in prompt
+    assert "{{item." not in prompt
+    assert "{{sample." not in prompt
+
+
+def test_previous_run_uses_only_the_same_question_set_version() -> None:
+    runs = [
+        SimpleNamespace(
+            id="older-same",
+            status="completed",
+            created_at=1,
+            metadata={"datasetVersion": "v1"},
+        ),
+        SimpleNamespace(
+            id="newer-other",
+            status="completed",
+            created_at=3,
+            metadata={"datasetVersion": "v2"},
+        ),
+        SimpleNamespace(
+            id="newer-same",
+            status="completed",
+            created_at=2,
+            metadata={"datasetVersion": "v1"},
+        ),
+    ]
+    client = SimpleNamespace(
+        evals=SimpleNamespace(runs=SimpleNamespace(list=lambda **_: runs))
+    )
+
+    baseline = runner.previous_run(
+        client,
+        eval_id="eval-id",
+        run_id="current",
+        dataset_version="v1",
+    )
+
+    assert baseline.id == "newer-same"
+
+
+def test_the_committed_dataset_matches_the_contract_and_has_ten_cases() -> None:
     cases = eval_dataset.load_dataset(DATASET)
 
-    assert 8 <= len(cases) <= 16
+    assert len(cases) == 10
     assert all(case.expected_behavior for case in cases)

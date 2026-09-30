@@ -15,6 +15,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET = REPOSITORY_ROOT / "eval" / "smoke.jsonl"
+DEFAULT_TOOL_DEFINITIONS = REPOSITORY_ROOT / "eval" / "tool-definitions.json"
 
 NORMAL = "normal"
 NO_EVIDENCE = "no-evidence"
@@ -94,6 +95,29 @@ def parse_case(raw: Mapping[str, object], *, line_number: int) -> EvalCase:
         expected_behavior=behavior,
         expected_sources=tuple(sources),
     )
+
+
+def load_tool_definitions(path: Path = DEFAULT_TOOL_DEFINITIONS) -> tuple[dict[str, object], ...]:
+    """The tool definitions every case is scored against.
+
+    The tool evaluators only receive these through a dataset item field, so the same
+    definitions are repeated on every row. They describe the agent, not the case, and
+    are therefore kept here rather than in the dataset.
+    """
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise EvalDatasetError(f"{path.name} is not valid JSON") from error
+    if not isinstance(document, list) or not document:
+        raise EvalDatasetError(f"{path.name} declares no tool definitions")
+    for position, definition in enumerate(document, start=1):
+        if not isinstance(definition, Mapping):
+            raise EvalDatasetError(f"tool definition {position} is not an object")
+        for field in ("name", "description"):
+            value = definition.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise EvalDatasetError(f"tool definition {position} has no {field}")
+    return tuple(dict(definition) for definition in document)
 
 
 def load_dataset(path: Path = DEFAULT_DATASET) -> tuple[EvalCase, ...]:
