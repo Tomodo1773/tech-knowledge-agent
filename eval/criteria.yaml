@@ -39,3 +39,76 @@ criteria:
     operation: like
     input: '{{sample.output_text}}'
     reference: '{{item.expectedSource}}'
+
+  # 以下は組み込み評価器。判定modelはサービス側の既定を使うため、AZURE_AI_MODEL_DEPLOYMENT_NAME
+  # を差し替えても指紋は変わらない。組み込み分だけは採点条件が指紋の外にある。
+  #
+  # 組み込み評価器の名前にはbuiltin.を付ける。付けないと作成時に404になる。
+  #
+  # dataMappingは省略できない。ここのitem項目名はcamelCaseで、評価器が期待する
+  # query / response と綴りが一致しないため、明示しないと作成時に弾かれる。
+  #
+  # 判定modelのdeployment名はここへ書かず、score_modelと同じく環境変数から入れる。
+  # 組み込み評価器も明示しないと作成時に弾かれる。指紋にも含まれる。
+  #
+  # ツール評価器はtool_callsも要る。作成時の必須ではないので指定しなくても通るが、
+  # 実際のツール呼び出しが見えず「評価対象が無い」として全行スキップされる。
+
+  # (2) 呼ぶべきツールを呼んだか。tool_definitionsはitem項目からしか届かない。
+  # Agent対象設定のツール説明として渡す経路では実行時に届かず、全行エラーになる。
+  - type: azure_ai_evaluator
+    name: tool_call_accuracy
+    evaluatorName: builtin.tool_call_accuracy
+    dataMapping:
+      query: '{{item.query}}'
+      # 最終テキストではなく往復全体。ツールの出力はこちらにしか入っていない。
+      response: '{{sample.output_items}}'
+      tool_calls: '{{sample.tool_calls}}'
+      tool_definitions: '{{item.toolDefinitions}}'
+
+  # (3) ツールへ渡した引数が妥当か。
+  - type: azure_ai_evaluator
+    name: tool_input_accuracy
+    evaluatorName: builtin.tool_input_accuracy
+    dataMapping:
+      query: '{{item.query}}'
+      # 最終テキストではなく往復全体。ツールの出力はこちらにしか入っていない。
+      response: '{{sample.output_items}}'
+      tool_calls: '{{sample.tool_calls}}'
+      tool_definitions: '{{item.toolDefinitions}}'
+
+  # (4) ツールが返したものを回答に活かせたか。記事に裏付けのない主張の付け足しは
+  # これが捉える。自作のanswer_qualityは素通りさせていた。
+  - type: azure_ai_evaluator
+    name: tool_output_utilization
+    evaluatorName: builtin.tool_output_utilization
+    dataMapping:
+      query: '{{item.query}}'
+      # 最終テキストではなく往復全体。ツールの出力はこちらにしか入っていない。
+      response: '{{sample.output_items}}'
+      tool_calls: '{{sample.tool_calls}}'
+      tool_definitions: '{{item.toolDefinitions}}'
+
+  # (6) 質問に対して的を射た回答か。
+  - type: azure_ai_evaluator
+    name: relevance
+    evaluatorName: builtin.relevance
+    dataMapping:
+      query: '{{item.query}}'
+      response: '{{sample.output_text}}'
+
+  # (7) 依頼された作業を最後までやったか。
+  - type: azure_ai_evaluator
+    name: task_adherence
+    evaluatorName: builtin.task_adherence
+    dataMapping:
+      query: '{{item.query}}'
+      response: '{{sample.output_text}}'
+
+  # (8) 質問の意図を取り違えていないか。
+  - type: azure_ai_evaluator
+    name: intent_resolution
+    evaluatorName: builtin.intent_resolution
+    dataMapping:
+      query: '{{item.query}}'
+      response: '{{sample.output_text}}'

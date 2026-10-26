@@ -43,6 +43,7 @@ Markdownの見出し構造をもとにchunkへ分け、embeddingを作ってCosm
 質問データセットをFoundryのbatch evaluationへ流し、デプロイ済みのHosted Agentが返した回答を採点する。
 判定は、期待する振る舞いを満たしているかのjudge採点と、期待した記事を出典に挙げたかの
 決定的な判定の二つ。採点基準を変えると別の評価枠になるため、基準の違うrunが混ざらない。
+手動での評価と本番会話の取り込み方は、[AI評価の手動運用](docs/evaluation-operations.md)にまとめている。
 
 ## 4. 主な特徴・設計上のポイント
 

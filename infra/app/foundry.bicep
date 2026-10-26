@@ -35,6 +35,14 @@ var monitoringMetricsPublisherRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '3913510d-42f4-4e42-8a64-420c390055eb'
 )
+var monitoringReaderRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '43d0d8ad-25c7-4714-9337-8ba259a9fe05'
+)
+var logAnalyticsReaderRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '73c42c96-874c-492b-b04d-ab87d138a893'
+)
 var cognitiveServicesOpenAIUserRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
@@ -123,6 +131,19 @@ resource projectMetricsPublisher 'Microsoft.Authorization/roleAssignments@2022-0
   }
 }
 
+// Evaluating traces has the project read back the Agent's own telemetry. Without these
+// two the run fails validation before scoring anything. The metrics publisher above only
+// writes, and Log Analytics Data Reader is a different role from the one asked for here.
+resource projectMonitoringReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: applicationInsights
+  name: guid(applicationInsightsResourceId, project.id, monitoringReaderRoleId)
+  properties: {
+    principalId: project.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: monitoringReaderRoleId
+  }
+}
+
 resource projectFoundryUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: foundryAccount
   name: guid(foundryAccount.id, project.id, foundryUserRoleId)
@@ -174,6 +195,16 @@ resource projectLogReader 'Microsoft.Authorization/roleAssignments@2022-04-01' =
     principalId: project.identity.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: logAnalyticsDataReaderRoleId
+  }
+}
+
+resource projectWorkspaceReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: workspace
+  name: guid(logAnalyticsResourceId, project.id, logAnalyticsReaderRoleId)
+  properties: {
+    principalId: project.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: logAnalyticsReaderRoleId
   }
 }
 
